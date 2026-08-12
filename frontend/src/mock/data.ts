@@ -328,7 +328,7 @@ export const mockBrokerageStatus: BrokerageStatus = {
   marketStatus: 'MARKET OPEN',
   tradingStatus: 'LIVE',
   account: {
-    clientId: 'UPS71829',
+    clientId: import.meta.env.VITE_CLIENT_ID || 'DEMO_CLIENT',
     name: 'Executive Alpha Trading',
     authStatus: 'AUTHENTICATED'
   }
