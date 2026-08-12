@@ -9,7 +9,7 @@ import { useSystemStore } from './systemStore';
 export function useLiveFeedSimulator() {
   const { indices, updateIndexPrice } = useMarketStore();
   const { updateLtp } = useOptionStore();
-  const { positions, updatePositionPrice } = usePortfolioStore();
+  const { positions, updatePositionPrices } = usePortfolioStore();
   const { brokerageStatus, setWsLatency } = useSystemStore();
 
   useEffect(() => {
@@ -43,16 +43,20 @@ export function useLiveFeedSimulator() {
       updateLtp('NIFTY', 24500, 'pe', parseFloat(Math.max(10, 108.20 + pePriceDelta).toFixed(2)));
 
       // 4. Update Position P&L and LTP based on changes
+      const positionUpdates: { id: string; newLtp: number }[] = [];
       positions.forEach((pos) => {
         if (pos.status === 'ACTIVE') {
           const ltpChange = (Math.random() - 0.47) * 0.25;
           const updatedLtp = parseFloat(Math.max(5, pos.ltp + ltpChange).toFixed(2));
-          updatePositionPrice(pos.id, updatedLtp);
+          positionUpdates.push({ id: pos.id, newLtp: updatedLtp });
         }
       });
+      if (positionUpdates.length > 0) {
+        updatePositionPrices(positionUpdates);
+      }
     }, 1500); // stable interval to avoid rendering overwhelm
 
     return () => clearInterval(interval);
-  }, [brokerageStatus.wsStatus, indices, positions, updateIndexPrice, updateLtp, updatePositionPrice, setWsLatency, brokerageStatus.wsLatency]);
+  }, [brokerageStatus.wsStatus, indices, positions, updateIndexPrice, updateLtp, updatePositionPrices, setWsLatency, brokerageStatus.wsLatency]);
 }
 export default useLiveFeedSimulator;
