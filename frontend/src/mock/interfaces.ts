@@ -82,7 +82,7 @@ export interface Strategy {
   signal: 'BUY CE' | 'SELL CE' | 'BUY PE' | 'SELL PE' | 'HOLD';
   confidence: number;
   pnl: number;
-  parameters: Record<string, any>;
+  parameters: Record<string, string | number>;
   indicators: Record<string, number | string>;
   levels: { support: number[]; resistance: number[] };
   oi: string;
