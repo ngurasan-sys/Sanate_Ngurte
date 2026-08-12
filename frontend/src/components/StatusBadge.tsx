@@ -34,12 +34,12 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
 
   let styleClass = 'bg-zinc-800 text-zinc-300 border-zinc-700';
 
-  if (isBullish) {
-    styleClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+  if (isBlocked) {
+    styleClass = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
   } else if (isBearish) {
     styleClass = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-  } else if (isBlocked) {
-    styleClass = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+  } else if (isBullish) {
+    styleClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
   }
 
   return (
