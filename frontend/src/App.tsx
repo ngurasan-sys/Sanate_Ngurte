@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import AppShell from './components/AppShell';
 import { useUiStore } from './stores/uiStore';
 import { useMarketStore } from './stores/marketStore';
@@ -32,6 +32,8 @@ export const App: React.FC = () => {
   const { activePage } = useUiStore();
   const { indices } = useMarketStore();
   const { totalPnl, todayPnl, positions } = usePortfolioStore();
+
+  const activePositionsCount = useMemo(() => positions.filter(p => p.status === 'ACTIVE').length, [positions]);
 
   // Control for Decision Detail Drawer
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null);
@@ -119,7 +121,7 @@ export const App: React.FC = () => {
                 />
                 <MetricCard
                   label="Active Positions"
-                  value={positions.filter(p => p.status === 'ACTIVE').length}
+                  value={activePositionsCount}
                   subValue="Working on market"
                 />
                 <MetricCard
