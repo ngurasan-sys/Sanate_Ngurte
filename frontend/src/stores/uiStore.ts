@@ -4,6 +4,7 @@ export type NavigationPage =
   | 'DASHBOARD'
   | 'MARKET_NIFTY'
   | 'MARKET_SENSEX'
+  | 'INTERACTIVE_CHART'
   | 'SPOT_OI'
   | 'FUTURE_OI'
   | 'OPTION_CHAIN'
