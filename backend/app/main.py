@@ -1,71 +1,146 @@
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
 import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.endpoints import router as api_router, set_level_engine
-from .core.db import db_manager
-from .core.websocket import websocket_manager
-from .core.listeners import DatabaseListeners
+from backend.app.core.event_bus import event_bus
+from backend.app.api.websockets import router as websocket_router
+from backend.app.workers.persistence import persistence_worker
 
-from .market_data.processor import TickProcessor
-from .market_data.feed import MockFeed
-from .levels.engine import LevelEngine
-from .strategies.level_based import LevelStrategyEngine
-from .engines.opportunity import OpportunityEngine
-from .engines.decision import DecisionEngine
-from .engines.risk import RiskEngine
-from .engines.execution import ExecutionEngine
+from backend.app.engines.decision import decision_engine
+from backend.app.engines.risk import risk_engine
+from backend.app.engines.execution import execution_engine
 
-# Global references to keep them alive
-tick_processor = None
-mock_feed = None
-level_engine = None
-strategy_engine = None
-opportunity_engine = None
-decision_engine = None
-risk_engine = None
-execution_engine = None
-db_listeners = None
+
+# =============================================================
+# LOGGING
+# =============================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format=(
+        "%(asctime)s - %(name)s - "
+        "%(levelname)s - %(message)s"
+    ),
+)
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================
+# APPLICATION LIFECYCLE
+# =============================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global tick_processor, mock_feed, level_engine, strategy_engine
-    global opportunity_engine, decision_engine, risk_engine, execution_engine, db_listeners
+    """
+    Application lifecycle.
 
-    # Instantiate Engines explicitly
-    tick_processor = TickProcessor()
-    level_engine = LevelEngine()
-    set_level_engine(level_engine)
-    strategy_engine = LevelStrategyEngine(level_engine)
-    opportunity_engine = OpportunityEngine()
-    decision_engine = DecisionEngine()
-    risk_engine = RiskEngine()
-    execution_engine = ExecutionEngine()
+    Starts the shared EventBus, downstream engines and
+    persistence worker when the application starts.
 
-    db_listeners = DatabaseListeners(db_manager, websocket_manager)
-    mock_feed = MockFeed(tick_processor)
+    Stops them cleanly during application shutdown.
+    """
 
-    # Start explicit EventBus subscriptions
-    level_engine.start()
-    strategy_engine.start()
-    opportunity_engine.start()
+    logger.info(
+        "Starting Algo Trading Workstation..."
+    )
+
+    # ---------------------------------------------------------
+    # Event Bus
+    # ---------------------------------------------------------
+
+    event_bus.start()
+
+    # ---------------------------------------------------------
+    # Downstream Engines
+    # ---------------------------------------------------------
+
     decision_engine.start()
     risk_engine.start()
     execution_engine.start()
-    db_listeners.start()
 
-    # Startup background tasks
-    task = asyncio.create_task(mock_feed.start())
+    # ---------------------------------------------------------
+    # Persistence Worker
+    # ---------------------------------------------------------
 
-    yield
+    persistence_task = asyncio.create_task(
+        persistence_worker.run()
+    )
 
-    # Shutdown
-    mock_feed.stop()
-    await task
-    db_manager.close()
+    logger.info(
+        "Application startup completed. "
+        "Event bus, engines and persistence worker "
+        "are running."
+    )
 
-app = FastAPI(title="Sanate Backend", lifespan=lifespan)
+    try:
+        yield
+
+    finally:
+        logger.info(
+            "Application shutting down..."
+        )
+
+        # -----------------------------------------------------
+        # Stop persistence worker
+        # -----------------------------------------------------
+
+        persistence_task.cancel()
+
+        try:
+            await persistence_task
+        except asyncio.CancelledError:
+            pass
+
+        # -----------------------------------------------------
+        # Stop downstream engines
+        # -----------------------------------------------------
+
+        if hasattr(execution_engine, "stop"):
+            execution_engine.stop()
+
+        if hasattr(risk_engine, "stop"):
+            risk_engine.stop()
+
+        if hasattr(decision_engine, "stop"):
+            decision_engine.stop()
+
+        # -----------------------------------------------------
+        # Stop Event Bus
+        # -----------------------------------------------------
+
+        if hasattr(event_bus, "stop"):
+            result = event_bus.stop()
+
+            if asyncio.iscoroutine(result):
+                await result
+
+        logger.info(
+            "Application shutdown completed."
+        )
+
+
+# =============================================================
+# FASTAPI APPLICATION
+# =============================================================
+
+app = FastAPI(
+    title="Algo Trading Workstation",
+    version="1.0.0",
+    description=(
+        "Professional algorithmic trading "
+        "backend infrastructure."
+    ),
+    lifespan=lifespan,
+)
+
+
+# =============================================================
+# CORS
+# =============================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -75,8 +150,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router)
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
+# =============================================================
+# WEBSOCKET
+# =============================================================
+
+app.include_router(
+    websocket_router
+)
+
+
+# =============================================================
+# HEALTH
+# =============================================================
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "ok",
+    }
