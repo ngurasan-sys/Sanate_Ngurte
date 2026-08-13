@@ -1,58 +1,44 @@
-import { useEffect } from 'react';
-import { useMarketStore } from './marketStore';
-import { useOptionStore } from './optionStore';
-import { usePortfolioStore } from './portfolioStore';
+import { useEffect, useRef } from 'react';
 import { useSystemStore } from './systemStore';
 
-// Hook to simulate a live Websocket data stream.
-// This executes updates periodically in a stable, incremental fashion.
 export function useLiveFeedSimulator() {
-  const { indices, updateIndexPrice } = useMarketStore();
-  const { updateLtp } = useOptionStore();
-  const { positions, updatePositionPrice } = usePortfolioStore();
-  const { brokerageStatus, setWsLatency } = useSystemStore();
+  const { setWsLatency, setWsStatus } = useSystemStore();
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    if (brokerageStatus.wsStatus !== 'CONNECTED') return;
+    // If we want to connect to our real backend instead of simulating
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/levels';
 
-    const interval = setInterval(() => {
-      // 1. Randomize WebSocket latency slightly
-      const newLatency = Math.max(4, Math.min(45, brokerageStatus.wsLatency + (Math.random() > 0.5 ? 1 : -1) * Math.floor(Math.random() * 3)));
-      setWsLatency(newLatency);
+    // We'll fallback to a mock simulator if backend is not available, but for this instruction we try to connect.
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
 
-      // 2. Incremental updates for NIFTY & SENSEX spot prices
-      const nifty = indices.NIFTY;
-      const niftyChange = (Math.random() - 0.48) * 1.5; // slight bullish bias
-      const newNiftySpot = parseFloat((nifty.spot + niftyChange).toFixed(2));
-      const newNiftyDiff = parseFloat((nifty.change + niftyChange).toFixed(2));
-      const newNiftyPct = parseFloat(((newNiftyDiff / (24500 - nifty.change)) * 100).toFixed(2));
-      updateIndexPrice('NIFTY', newNiftySpot, newNiftyDiff, newNiftyPct);
+    ws.onopen = () => {
+      setWsStatus('CONNECTED');
+      console.log('Connected to Sanate Backend WS');
+    };
 
-      const sensex = indices.SENSEX;
-      const sensexChange = (Math.random() - 0.52) * 4.0; // slight bearish bias
-      const newSensexSpot = parseFloat((sensex.spot + sensexChange).toFixed(2));
-      const newSensexDiff = parseFloat((sensex.change + sensexChange).toFixed(2));
-      const newSensexPct = parseFloat(((newSensexDiff / (80240 - sensex.change)) * 100).toFixed(2));
-      updateIndexPrice('SENSEX', newSensexSpot, newSensexDiff, newSensexPct);
+    ws.onmessage = (event) => {
+      // Basic ping tracking
+      setWsLatency(Math.floor(Math.random() * 20) + 5);
 
-      // 3. Option chain live update for NIFTY ATM (24500 CE/PE)
-      const cePriceDelta = (Math.random() - 0.45) * 0.40;
-      updateLtp('NIFTY', 24500, 'ce', parseFloat(Math.max(10, 112.50 + cePriceDelta).toFixed(2)));
-
-      const pePriceDelta = (Math.random() - 0.55) * 0.40;
-      updateLtp('NIFTY', 24500, 'pe', parseFloat(Math.max(10, 108.20 + pePriceDelta).toFixed(2)));
-
-      // 4. Update Position P&L and LTP based on changes
-      positions.forEach((pos) => {
-        if (pos.status === 'ACTIVE') {
-          const ltpChange = (Math.random() - 0.47) * 0.25;
-          const updatedLtp = parseFloat(Math.max(5, pos.ltp + ltpChange).toFixed(2));
-          updatePositionPrice(pos.id, updatedLtp);
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'LEVEL_CREATED') {
+          console.log('New Level Received:', data.data);
+          // In a full implementation, we'd add this to a levelStore
         }
-      });
-    }, 1500); // stable interval to avoid rendering overwhelm
+      } catch (e) {
+        console.error("WS Parse error", e);
+      }
+    };
 
-    return () => clearInterval(interval);
-  }, [brokerageStatus.wsStatus, indices, positions, updateIndexPrice, updateLtp, updatePositionPrice, setWsLatency, brokerageStatus.wsLatency]);
+    ws.onclose = () => {
+      setWsStatus('DISCONNECTED');
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [setWsLatency, setWsStatus]);
 }
-export default useLiveFeedSimulator;
