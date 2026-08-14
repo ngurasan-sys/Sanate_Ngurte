@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, 'D:/sanate')
+
 
 from datetime import datetime, timezone
 import asyncio

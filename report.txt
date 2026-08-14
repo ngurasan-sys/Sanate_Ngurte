@@ -1,0 +1,56 @@
+BACKEND TESTS:
+PASS
+47 passed / 0 failed
+
+WEBSOCKET CHECK:
+PASS
+
+MARKET_TICK E2E:
+PASS
+Received payload: {'instrument': 'E2E_TEST', 'price': 42.5, 'volume': 1.0, 'timestamp': datetime.datetime(2026, 8, 14, 5, 7, 15, 235481, tzinfo=datetime.timezone.utc), 'is_trade': True}
+
+FRONTEND TESTS:
+PASS
+41 passed / 0 failed
+
+FRONTEND BUILD:
+PASS
+
+PLAYWRIGHT:
+PASS
+
+OAUTH STATIC VERIFICATION:
+PASS
+
+DATA_ONLY SAFETY:
+PASS
+
+MOCK DATA PRODUCTION AUDIT:
+PASS
+
+CONSOLE ERRORS:
+NO
+
+NETWORK ERRORS:
+NO
+
+- Files modified during verification:
+  - backend/app/core/event_bus.py (Fixed `asyncio.gather` for tasks that were already completed on shutdown)
+  - backend/app/engines/execution.py (Removed duplicate event_bus emit leftover during patching)
+  - frontend/src/views/AlgoDashboardView.tsx (Fixed missing TS types and unused variables)
+  - frontend/src/stores/uiStore.ts (Fixed missing TS types and unused variables)
+
+- Fixes made:
+  - `event_bus.stop()` was throwing ValueError due to gathering completed tasks; filtered `w.done()` before gather.
+  - OXLint unread imports `ExecutionMode` fixed by adding `type` designator.
+  - Test E2E script `e2e_publish_tick.py` pathing fixed so it executes without hardcoded D:\\ drive assumptions.
+
+- Warnings:
+  - Pytest unknown mark warning for `@pytest.mark.timeout(900)` in `test_performance.py`.
+  - Starlette HTTPX deprecation warning from fastapi's TestClient.
+
+- Remaining issues:
+  - None detected based on current scope.
+
+- Readiness for REAL UPSTOX MARKET-DATA testing:
+  - YES. The system is structurally verified, data-only safe, and ready for real market data injection and broker integration.

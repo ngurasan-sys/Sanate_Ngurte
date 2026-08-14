@@ -322,14 +322,14 @@ export const mockRiskSummary: RiskSummaryData = {
 
 export const mockBrokerageStatus: BrokerageStatus = {
   brokerName: 'Upstox',
-  isConnected: true,
-  wsStatus: 'CONNECTED',
+  isConnected: false,
+  wsStatus: 'DISCONNECTED',
   wsLatency: 12,
   marketStatus: 'MARKET OPEN',
   tradingStatus: 'LIVE',
   account: {
     clientId: 'UPS71829',
     name: 'Executive Alpha Trading',
-    authStatus: 'AUTHENTICATED'
+    authStatus: 'AUTHENTICATION REQUIRED'
   }
 };
