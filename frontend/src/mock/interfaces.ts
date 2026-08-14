@@ -61,6 +61,14 @@ export interface SpotTrendingOIItem {
   changeCeOi: number;
   changePeOi: number;
   ltp?: number;
+  crossover?: string;
+  crossover_timestamp?: string | null;
+  trade_valid?: boolean;
+  rejection_reason?: string;
+  vwap_supertrend_distance?: number;
+  time_filter_status?: string;
+  distance_filter_status?: string;
+  execution_state?: string;
 }
 
 export interface FutureTrendingOIItem {

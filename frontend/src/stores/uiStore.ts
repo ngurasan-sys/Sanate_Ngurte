@@ -29,6 +29,7 @@ export type NavigationPage =
   | 'SYSTEM_HEALTH'
   | 'DATA_FEED'
   | 'TRENDING_OI_PA'
+  | 'TRENDING_OI_CROSSOVER';
   | 'STRADDLE';
   | 'INTRADAY_TREND_SCALPER';
   | 'MARKET_BREADTH';

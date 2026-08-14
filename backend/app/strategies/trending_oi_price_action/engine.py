@@ -29,6 +29,10 @@ class TrendingOIPriceActionStrategy:
 
         self.tier_1_lots = 2
         self.tier_2_lots = 2
+        self.tier_3_lots = 2
+        self.max_vwap_supertrend_distance = 40.0
+        self.partial_exit_pct = 30.0
+        self.trade_cutoff_time = time(14, 30)
 
         # Position trackers per instrument
         self.positions = {}
@@ -54,7 +58,17 @@ class TrendingOIPriceActionStrategy:
                 "daily_atr": DailyATR(period=14),
                 "current_day_high": -float("inf"),
                 "current_day_low": float("inf"),
-                "current_day_str": ""
+                "current_day_str": "",
+                "trade_valid": True,
+                "rejection_reason": "",
+                "time_filter_status": "VALID",
+                "distance_filter_status": "VALID",
+                "vwap_supertrend_distance": 0.0,
+                "tier_1_status": "PENDING",
+                "tier_2_status": "PENDING",
+                "tier_3_status": "PENDING",
+                "partial_exit_done": False,
+                "breakeven_done": False
             }
         return self.positions[instrument]
 
@@ -130,6 +144,33 @@ class TrendingOIPriceActionStrategy:
             state["indicator_distance"] = abs(supertrend_val - state["last_vwap"])
             converged = state["indicator_distance"] <= self.convergence_threshold
 
+            state["vwap_supertrend_distance"] = state["indicator_distance"]
+
+            # Time filter
+            if current_time >= self.trade_cutoff_time:
+                state["time_filter_status"] = "BLOCKED"
+                state["trade_valid"] = False
+                state["rejection_reason"] = "REJECTED: Post 2:30 PM Premium Decay Risk"
+            else:
+                state["time_filter_status"] = "VALID"
+
+            # Distance filter
+            if state["vwap_supertrend_distance"] > self.max_vwap_supertrend_distance:
+                state["distance_filter_status"] = "BLOCKED"
+                if state["trade_valid"]: # Time filter might have already blocked it
+                    state["trade_valid"] = False
+                    state["rejection_reason"] = "REJECTED: VWAP and Supertrend distance too wide"
+            else:
+                state["distance_filter_status"] = "VALID"
+
+            # If not valid, don't enter new setups
+            if not state["trade_valid"] and state["position_state"] == "WAITING":
+                state["position_state"] = "TRADE_BLOCKED"
+                return
+            elif state["trade_valid"] and state["position_state"] in ["WAITING", "TRADE_BLOCKED"]:
+                state["position_state"] = "WAITING"
+
+
             # 1. Range Exhaustion Check
             intraday_range = state["current_day_high"] - state["current_day_low"]
             daily_atr_val = state["daily_atr"].atr_values[-1] if state["daily_atr"].atr_values else None
@@ -163,12 +204,19 @@ class TrendingOIPriceActionStrategy:
                     if candle.high >= supertrend_val - self.pullback_tolerance:
                         state["position_state"] = "BEARISH_SETUP"
 
+
             if state["position_state"] == "BULLISH_SETUP":
+                state["tier_1_status"] = "FILLED"
+                state["tier_2_status"] = "PENDING"
+                state["tier_3_status"] = "PENDING"
                 await self._execute_signal(
                     candle, state, "BUY_CE", converged, supertrend_val, "Bullish Pullback Confirmed"
                 )
 
             elif state["position_state"] == "BEARISH_SETUP":
+                state["tier_1_status"] = "FILLED"
+                state["tier_2_status"] = "PENDING"
+                state["tier_3_status"] = "PENDING"
                 await self._execute_signal(
                     candle, state, "BUY_PE", converged, supertrend_val, "Bearish Pullback Confirmed"
                 )
@@ -177,15 +225,45 @@ class TrendingOIPriceActionStrategy:
                 # Check for Tier 2 on deeper VWAP pullback
                 if state["lots_held"] == self.tier_1_lots:
                     if state["bullish_oi_confirmed"] and candle.low <= state["last_vwap"] + self.vwap_buffer:
+                        state["tier_2_status"] = "FILLED"
                         await self._execute_signal(
                             candle, state, "ADD_TIER_2", False, state["last_vwap"], "Deeper VWAP Pullback"
                         )
                     elif state["bearish_oi_confirmed"] and candle.high >= state["last_vwap"] - self.vwap_buffer:
+                        state["tier_2_status"] = "FILLED"
                         await self._execute_signal(
                             candle, state, "ADD_TIER_2", False, state["last_vwap"], "Deeper VWAP Pullback"
                         )
 
+            # Profit Reversal Logic
+            if state["position_state"] in ["TIER_2_ENTERED", "PARTIAL_PROFIT", "TRAILING"]:
+                if state["tier_1_status"] == "FILLED" and state["tier_2_status"] == "FILLED" and not state["partial_exit_done"]:
+                    if state["bullish_oi_confirmed"] and candle.close > state["last_vwap"]:
+                        state["tier_3_status"] = "CANCELLED"
+                        state["partial_exit_done"] = True
+                        state["position_state"] = "PARTIAL_EXIT"
+                        exit_lots = max(1, int(state["lots_held"] * (self.partial_exit_pct / 100.0)))
+                        state["lots_held"] -= exit_lots
+                        state["current_sl"] = state["avg_entry_price"]
+                        state["breakeven_done"] = True
+                        await self._emit_signal("CANCEL_TIER_3", candle.instrument, state, 0, 0.0, "Profit Reversal: Cancel Tier 3")
+                        await self._emit_signal("EXIT_PARTIAL", candle.instrument, state, exit_lots, state["current_sl"], f"Booked {self.partial_exit_pct}% Profit")
+                        await self._emit_signal("TRAIL_SL", candle.instrument, state, state["lots_held"], state["current_sl"], "Moved SL to Breakeven")
+
+                    elif state["bearish_oi_confirmed"] and candle.close < state["last_vwap"]:
+                        state["tier_3_status"] = "CANCELLED"
+                        state["partial_exit_done"] = True
+                        state["position_state"] = "PARTIAL_EXIT"
+                        exit_lots = max(1, int(state["lots_held"] * (self.partial_exit_pct / 100.0)))
+                        state["lots_held"] -= exit_lots
+                        state["current_sl"] = state["avg_entry_price"]
+                        state["breakeven_done"] = True
+                        await self._emit_signal("CANCEL_TIER_3", candle.instrument, state, 0, 0.0, "Profit Reversal: Cancel Tier 3")
+                        await self._emit_signal("EXIT_PARTIAL", candle.instrument, state, exit_lots, state["current_sl"], f"Booked {self.partial_exit_pct}% Profit")
+                        await self._emit_signal("TRAIL_SL", candle.instrument, state, state["lots_held"], state["current_sl"], "Moved SL to Breakeven")
+
                 # Trailing Stop check on candle close
+
                 if state["position_state"] in ["PARTIAL_PROFIT", "TRAILING"]:
                     if state["bullish_oi_confirmed"]:
                         new_sl = max(state["current_sl"], candle.low - self.vwap_buffer)
@@ -300,12 +378,6 @@ class TrendingOIPriceActionStrategy:
                     await self._emit_signal("EXIT_ALL", tick.instrument, state, 0, state["current_sl"], "Stop Loss Hit")
                     return
 
-                # Check Partial Profit
-                if profit >= self.partial_profit_points:
-                    state["position_state"] = "PARTIAL_PROFIT"
-                    state["lots_held"] = state["lots_held"] // 2
-                    state["current_sl"] = state["avg_entry_price"]
-                    await self._emit_signal("EXIT_PARTIAL", tick.instrument, state, state["lots_held"], state["current_sl"], "Booked 50% Profit, Stop at Breakeven")
 
         elif state["position_state"] in ["PARTIAL_PROFIT", "TRAILING"]:
             is_bullish = state["bullish_oi_confirmed"]
