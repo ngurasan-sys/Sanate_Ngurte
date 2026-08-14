@@ -1,3 +1,4 @@
+import OpenHighTable from "../components/open_high/OpenHighTable";
 import React from 'react';
 import { useAlgoStore } from '../stores/algoStore';
 import type { ExecutionMode } from '../stores/algoStore';
@@ -292,6 +293,11 @@ export const AlgoDashboardView: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* SECTION 1.5 — OPEN=HIGH STRATEGY */}
+      <div className="mb-6">
+        <OpenHighTable />
       </div>
 
       {/* SECTION 2 — STRATEGY MONITOR */}
