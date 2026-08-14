@@ -60,6 +60,7 @@ export interface SpotTrendingOIItem {
   peOi: number;
   changeCeOi: number;
   changePeOi: number;
+  ltp?: number;
 }
 
 export interface FutureTrendingOIItem {
