@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+duckdb
+numpy
+pydantic
+websockets
+pytest
+httpx
