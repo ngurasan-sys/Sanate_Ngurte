@@ -1,7 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import List, Dict
 import logging
-from ..core.websocket import websocket_manager
+from ...core.websocket import websocket_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -46,11 +46,3 @@ def get_resistance_levels(instrument: str):
         return []
     return [l.model_dump() for l in engine.active_levels.get(instrument, []) if l.level_type == "Resistance"]
 
-@router.websocket("/ws/levels")
-async def websocket_levels(websocket: WebSocket):
-    await websocket_manager.connect(websocket, "levels")
-    try:
-        while True:
-            data = await websocket.receive_text()
-    except WebSocketDisconnect:
-        websocket_manager.disconnect(websocket, "levels")
