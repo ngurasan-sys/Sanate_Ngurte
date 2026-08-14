@@ -48,6 +48,7 @@ export const Sidebar: React.FC = () => {
         { label: 'NIFTY', icon: LineChart, page: 'MARKET_NIFTY' },
         { label: 'SENSEX', icon: LineChart, page: 'MARKET_SENSEX' },
         { label: 'Advanced Chart', icon: LineChart, page: 'INTERACTIVE_CHART' },
+        { label: 'Market Breadth', icon: Activity, page: 'MARKET_BREADTH' },
       ],
     },
     {

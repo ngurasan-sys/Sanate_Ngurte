@@ -27,6 +27,7 @@ import InteractiveChartView from './views/InteractiveChartView';
 import AlgoDashboardView from './views/AlgoDashboardView';
 import { TrendingOIPAView } from './views/TrendingOIPAView';
 import { PullbackChopFilterView } from './views/PullbackChopFilterView';
+import MarketBreadthPage from './components/breadth/MarketBreadthPage';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -214,6 +215,9 @@ export const App: React.FC = () => {
 
       case 'INTERACTIVE_CHART':
         return <InteractiveChartView />;
+
+      case 'MARKET_BREADTH':
+        return <MarketBreadthPage />;
 
       case 'SPOT_OI':
         return <OIPanel />;
