@@ -71,6 +71,7 @@ export const Sidebar: React.FC = () => {
     {
       section: 'STRATEGIES',
       items: [
+        { label: 'Gap Opening Strategies', icon: BookOpen, page: 'GAP_OPENING_STRATEGIES' },
         { label: 'Strategy Monitor', icon: BookOpen, page: 'STRATEGY_MONITOR' },
         { label: 'Live Signals', icon: Sparkles, page: 'LIVE_SIGNALS' },
         { label: 'Backtest', icon: FileText, page: 'BACKTEST' },

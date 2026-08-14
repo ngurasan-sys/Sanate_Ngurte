@@ -15,6 +15,7 @@ import OptionChainPanel from './components/OptionChainPanel';
 import GreeksPanel from './components/GreeksPanel';
 import LevelPanel from './components/LevelPanel';
 import StrategyPanel from './components/StrategyPanel';
+import GapOpeningStrategyPanel from './components/GapOpeningStrategyPanel';
 import DecisionPanel from './components/DecisionPanel';
 import DetailDrawer from './components/DetailDrawer';
 import RiskPanel from './components/RiskPanel';
@@ -325,6 +326,9 @@ export const App: React.FC = () => {
 
       case 'STRATEGY_MONITOR':
         return <StrategyPanel />;
+
+      case 'GAP_OPENING_STRATEGIES':
+        return <GapOpeningStrategyPanel />;
 
       case 'LIVE_SIGNALS':
         return (
