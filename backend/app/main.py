@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.core.event_bus import event_bus
 from backend.app.api.websockets import router as websocket_router
 from backend.app.api.endpoints.order_flow import router as order_flow_router
-from backend.app.workers.persistence import persistence_worker
+from backend.app.api.endpoints.levels import router as levels_router
 
 from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
@@ -66,12 +66,13 @@ async def lifespan(app: FastAPI):
     order_flow_processor.start()
 
     # ---------------------------------------------------------
-    # Persistence Worker
+    # Persistence Worker (lazy import)
     # ---------------------------------------------------------
-
-    persistence_task = asyncio.create_task(
-        persistence_worker.run()
-    )
+    try:
+        from backend.app.workers.persistence import persistence_worker
+        persistence_task = asyncio.create_task(persistence_worker.run())
+    except Exception:
+        persistence_task = None
 
     logger.info(
         "Application startup completed. "
@@ -90,13 +91,12 @@ async def lifespan(app: FastAPI):
         # -----------------------------------------------------
         # Stop persistence worker
         # -----------------------------------------------------
-
-        persistence_task.cancel()
-
-        try:
-            await persistence_task
-        except asyncio.CancelledError:
-            pass
+        if persistence_task:
+            persistence_task.cancel()
+            try:
+                await persistence_task
+            except asyncio.CancelledError:
+                pass
 
         # -----------------------------------------------------
         # Stop downstream engines & processors
@@ -167,6 +167,10 @@ app.include_router(
 
 app.include_router(
     order_flow_router
+)
+
+app.include_router(
+    levels_router
 )
 
 

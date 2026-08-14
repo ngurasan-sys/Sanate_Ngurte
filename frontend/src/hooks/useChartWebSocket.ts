@@ -22,8 +22,10 @@ export default function useChartWebSocket(symbol: string, timeframe: string, his
         }
     }, [historyData]);
 
+    const heartbeatRef = useRef<number | null>(null);
+
     const connect = () => {
-        if (ws.current?.readyState === WebSocket.OPEN) return;
+        if (ws.current && ws.current.readyState === WebSocket.OPEN) return;
 
         ws.current = new WebSocket('ws://localhost:8000/api/v1/chart/stream');
 
@@ -31,42 +33,57 @@ export default function useChartWebSocket(symbol: string, timeframe: string, his
             setIsConnected(true);
             reconnectAttempts.current = 0;
 
-            // Start heartbeat ping
-            setInterval(() => {
+            // Start heartbeat ping; store interval id so it can be cleared later
+            if (heartbeatRef.current) {
+                clearInterval(heartbeatRef.current);
+            }
+            heartbeatRef.current = window.setInterval(() => {
                 if (ws.current?.readyState === WebSocket.OPEN) {
-                    ws.current.send('ping');
+                    try { ws.current.send('ping'); } catch (e) { /* ignore */ }
                 }
             }, 5000);
         };
 
         ws.current.onmessage = (event) => {
+            if (!event.data) return;
             if (event.data === 'pong') return;
 
             try {
-                const tick = JSON.parse(event.data);
-                if (tick.type === 'tick' && tick.symbol === symbol) {
-                    processTick(tick);
-                }
+                const msg = JSON.parse(event.data);
+
+                // Accept both wrapped messages ({ type, data }) and raw tick objects
+                const payload = msg.data ?? msg;
+
+                const instrument = payload.instrument ?? payload.symbol;
+                if (instrument && instrument !== symbol) return;
+
+                processTick(payload);
             } catch (err) {
-                console.error("Error parsing websocket message", err);
+                console.error('Error parsing websocket message', err);
             }
         };
 
         ws.current.onclose = () => {
             setIsConnected(false);
 
+            // Clear heartbeat
+            if (heartbeatRef.current) {
+                clearInterval(heartbeatRef.current);
+                heartbeatRef.current = null;
+            }
+
             // Exponential backoff
             const timeout = Math.min(10000, 1000 * Math.pow(2, reconnectAttempts.current));
             reconnectAttempts.current += 1;
 
-            reconnectTimeout.current = setTimeout(() => {
+            reconnectTimeout.current = window.setTimeout(() => {
                 connect();
             }, timeout);
         };
 
         ws.current.onerror = (err) => {
-            console.error("WebSocket error:", err);
-            ws.current?.close();
+            console.error('WebSocket error:', err);
+            try { ws.current?.close(); } catch (e) { /* ignore */ }
         };
     };
 
@@ -85,72 +102,37 @@ export default function useChartWebSocket(symbol: string, timeframe: string, his
     }, [symbol, timeframe]);
 
     const processTick = (tick: any) => {
-        if (ws.current?.readyState === WebSocket.OPEN) return;
+        // tick expected to contain: instrument/symbol, timestamp, price/ltp, volume, oi
+        if (!tick) return;
 
-        ws.current = new WebSocket('ws://localhost:8000/api/v1/chart/stream');
-
-        ws.current.onopen = () => {
-            setIsConnected(true);
-            reconnectAttempts.current = 0;
-
-            // Start heartbeat ping
-            setInterval(() => {
-                if (ws.current?.readyState === WebSocket.OPEN) {
-                    ws.current.send('ping');
-                }
-            }, 5000);
-        };
-
-        ws.current.onmessage = (event) => {
-            if (event.data === 'pong') return;
-
-            try {
-                const tick = JSON.parse(event.data);
-                if (tick.type === 'tick' && tick.symbol === symbol) {
-                    processTick(tick);
-                }
-            } catch (err) {
-                console.error("Error parsing websocket message", err);
-            }
-        };
-
-        ws.current.onclose = () => {
-            setIsConnected(false);
-
-            // Exponential backoff
-            const timeout = Math.min(10000, 1000 * Math.pow(2, reconnectAttempts.current));
-            reconnectAttempts.current += 1;
-
-            reconnectTimeout.current = setTimeout(() => {
-                connect();
-            }, timeout);
-        };
-
-        const tickTime = Math.floor(tick.timestamp / 1000);
+        const ts = typeof tick.timestamp === 'number' ? tick.timestamp : (new Date(tick.timestamp)).getTime();
+        const tickTime = Math.floor(ts / 1000);
         const candleTime = tickTime - (tickTime % tf_seconds);
 
         let candle = currentCandleRef.current;
+
+        const ltp = tick.price ?? tick.ltp ?? tick.close ?? 0;
 
         if (!candle || candle.time < candleTime) {
             // New candle
             candle = {
                 time: candleTime,
-                open: tick.ltp,
-                high: tick.ltp,
-                low: tick.ltp,
-                close: tick.ltp
+                open: ltp,
+                high: ltp,
+                low: ltp,
+                close: ltp
             };
         } else {
             // Update existing candle
-            candle.high = Math.max(candle.high, tick.ltp);
-            candle.low = Math.min(candle.low, tick.ltp);
-            candle.close = tick.ltp;
+            candle.high = Math.max(candle.high, ltp);
+            candle.low = Math.min(candle.low, ltp);
+            candle.close = ltp;
         }
 
         currentCandleRef.current = candle;
         setLatestCandle({ ...candle });
-        setLatestVolume(tick.volume);
-        setLatestOI(tick.oi);
+        setLatestVolume(tick.volume ?? 0);
+        setLatestOI(tick.oi ?? 0);
     };
 
     return { isConnected, latestCandle, latestVolume, latestOI };
