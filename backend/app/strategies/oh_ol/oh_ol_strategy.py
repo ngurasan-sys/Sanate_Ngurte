@@ -3,10 +3,10 @@ from datetime import datetime
 from pydantic import BaseModel
 import logging
 
-from app.core.event_bus import event_bus
-from app.market_data.models import Tick
-from app.oi.models import OITick
-from app.core.indicators import Supertrend
+from backend.app.core.event_bus import event_bus
+from backend.app.market_data.models import Tick
+from backend.app.oi.models import OITick
+from backend.app.core.indicators import Supertrend
 
 logger = logging.getLogger(__name__)
 

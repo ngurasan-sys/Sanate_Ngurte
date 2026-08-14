@@ -29,6 +29,7 @@ export type NavigationPage =
   | 'SYSTEM_HEALTH'
   | 'DATA_FEED'
   | 'TRENDING_OI_PA'
+  | 'MARKET_BREADTH';
   | 'TWO_CANDLE';
 
 interface UIState {
