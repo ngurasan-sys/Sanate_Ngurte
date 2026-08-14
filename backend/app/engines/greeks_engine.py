@@ -48,4 +48,4 @@ class GreeksEngine:
         )
 
         # Publish using existing event bus
-        self.event_bus.publish("GREEKS_UPDATED", greek_model)
+        await self.event_bus.publish("GREEKS_UPDATED", greek_model)

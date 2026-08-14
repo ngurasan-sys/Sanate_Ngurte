@@ -7,11 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.core.event_bus import event_bus
 from backend.app.api.websockets import router as websocket_router
+from backend.app.api.endpoints.order_flow import router as order_flow_router
 from backend.app.workers.persistence import persistence_worker
 
 from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
 from backend.app.engines.execution import execution_engine
+from backend.app.order_flow.tick_processor import order_flow_processor
 
 
 # =============================================================
@@ -38,8 +40,8 @@ async def lifespan(app: FastAPI):
     """
     Application lifecycle.
 
-    Starts the shared EventBus, downstream engines and
-    persistence worker when the application starts.
+    Starts the shared EventBus, downstream engines, order flow processor,
+    and persistence worker when the application starts.
 
     Stops them cleanly during application shutdown.
     """
@@ -55,12 +57,13 @@ async def lifespan(app: FastAPI):
     event_bus.start()
 
     # ---------------------------------------------------------
-    # Downstream Engines
+    # Downstream Engines & Processors
     # ---------------------------------------------------------
 
     decision_engine.start()
     risk_engine.start()
     execution_engine.start()
+    order_flow_processor.start()
 
     # ---------------------------------------------------------
     # Persistence Worker
@@ -72,7 +75,7 @@ async def lifespan(app: FastAPI):
 
     logger.info(
         "Application startup completed. "
-        "Event bus, engines and persistence worker "
+        "Event bus, engines, order flow processor and persistence worker "
         "are running."
     )
 
@@ -96,8 +99,11 @@ async def lifespan(app: FastAPI):
             pass
 
         # -----------------------------------------------------
-        # Stop downstream engines
+        # Stop downstream engines & processors
         # -----------------------------------------------------
+
+        if hasattr(order_flow_processor, "stop"):
+            order_flow_processor.stop()
 
         if hasattr(execution_engine, "stop"):
             execution_engine.stop()
@@ -152,11 +158,15 @@ app.add_middleware(
 
 
 # =============================================================
-# WEBSOCKET
+# ROUTERS
 # =============================================================
 
 app.include_router(
     websocket_router
+)
+
+app.include_router(
+    order_flow_router
 )
 
 

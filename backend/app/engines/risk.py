@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Dict, Any
 from datetime import datetime
-from ..core.event_bus import event_bus
+from backend.app.core.event_bus import event_bus
 
 class RiskDecision(BaseModel):
     risk_id: str
@@ -34,3 +34,5 @@ class RiskEngine:
                 "decision_id": dec_data['decision_id'],
                 "timestamp": dec_data['timestamp']
             })
+
+risk_engine = RiskEngine()

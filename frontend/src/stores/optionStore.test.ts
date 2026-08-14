@@ -21,7 +21,6 @@ describe('useOptionStore', () => {
       const initialChain = optionChains[symbol][0];
       const initialStrikeData = initialChain.strikes.find(s => s.strike === targetStrike);
       expect(initialStrikeData).toBeDefined();
-      const initialCeLtp = initialStrikeData!.ce.ltp;
 
       // Perform update
       updateLtp(symbol, targetStrike, 'ce', newLtp);

@@ -1,20 +1,23 @@
 import pytest
 import asyncio
 from datetime import datetime, timezone
-from app.market_data.models import Tick
-from app.market_data.processor import TickProcessor
-from app.levels.engine import LevelEngine
-from app.strategies.level_based import LevelStrategyEngine
-from app.engines.opportunity import OpportunityEngine
-from app.engines.decision import DecisionEngine
-from app.engines.risk import RiskEngine
-from app.engines.execution import ExecutionEngine
-from app.core.event_bus import event_bus
+from backend.app.market_data.models import Tick
+from backend.app.market_data.processor import TickProcessor
+from backend.app.levels.engine import LevelEngine
+from backend.app.strategies.level_based import LevelStrategyEngine
+from backend.app.engines.opportunity import OpportunityEngine
+from backend.app.engines.decision import DecisionEngine
+from backend.app.engines.risk import RiskEngine
+from backend.app.engines.execution import ExecutionEngine
+from backend.app.core.event_bus import event_bus
 
 @pytest.mark.asyncio
 async def test_full_event_flow():
     # Clear event bus to prevent bleed from other tests
-    event_bus._subscribers.clear()
+    event_bus._pending_subscriptions.clear()
+    event_bus._subscriber_queues.clear()
+    event_bus._workers.clear()
+    event_bus._started = False
 
     tick_processor = TickProcessor()
     level_engine = LevelEngine()
@@ -30,6 +33,7 @@ async def test_full_event_flow():
     decision_engine.start()
     risk_engine.start()
     execution_engine.start()
+    event_bus.start()
 
     captured_events = []
 

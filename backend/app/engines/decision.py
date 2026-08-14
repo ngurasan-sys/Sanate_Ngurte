@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Dict, Any
 from datetime import datetime
-from ..core.event_bus import event_bus
+from backend.app.core.event_bus import event_bus
 
 class Decision(BaseModel):
     decision_id: str
@@ -28,3 +28,5 @@ class DecisionEngine:
             reasoning=f"Confidence is {opp_data['confidence']}"
         )
         await event_bus.publish("DECISION_CREATED", decision.model_dump())
+
+decision_engine = DecisionEngine()

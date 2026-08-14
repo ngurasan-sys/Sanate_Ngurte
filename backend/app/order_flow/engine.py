@@ -107,14 +107,28 @@ class OrderFlowEngine:
                 # build up to depth_limit
                 limited_bids = bids[: self.depth_limit]
                 # reuse existing DepthLevel objects where possible based on price match
-                state.depth.bids = [DepthLevel(**b) for b in limited_bids]
+                state.depth.bids = [
+                    DepthLevel.model_construct(
+                        price=b["price"],
+                        quantity=b["quantity"],
+                        orders=b.get("orders", 0)
+                    ) if isinstance(b, dict) else b
+                    for b in limited_bids
+                ]
                 if state.depth.bids:
                     raw["best_bid"] = state.depth.bids[0].price
             # if same, leave state.depth.bids unchanged
 
             if asks_fp != last_asks_fp:
                 limited_asks = asks[: self.depth_limit]
-                state.depth.asks = [DepthLevel(**a) for a in limited_asks]
+                state.depth.asks = [
+                    DepthLevel.model_construct(
+                        price=a["price"],
+                        quantity=a["quantity"],
+                        orders=a.get("orders", 0)
+                    ) if isinstance(a, dict) else a
+                    for a in limited_asks
+                ]
                 if state.depth.asks:
                     raw["best_ask"] = state.depth.asks[0].price
 
@@ -137,7 +151,7 @@ class OrderFlowEngine:
                 if min_levels >= n:
                     # compute only when at least n levels available
                     setattr(state, attr, calculate_depth_imbalance(state.depth.bids, state.depth.asks, n))
-                else:
+                elif getattr(state, attr, None) is not None:
                     setattr(state, attr, None)
 
         # --- Process trade flow ---
@@ -180,12 +194,28 @@ class OrderFlowEngine:
                 if direction == "AGGRESSIVE_BUY":
                     state.buy_volume += trade_size
                     if ltp not in state.footprint:
-                        state.footprint[ltp] = FootprintNode(price=ltp)
+                        state.footprint[ltp] = FootprintNode.model_construct(
+                            price=ltp,
+                            bid_volume=0,
+                            ask_volume=0,
+                            delta=0,
+                            total_volume=0,
+                            buy_imbalance=False,
+                            sell_imbalance=False
+                        )
                     state.footprint[ltp].ask_volume += trade_size
                 elif direction == "AGGRESSIVE_SELL":
                     state.sell_volume += trade_size
                     if ltp not in state.footprint:
-                        state.footprint[ltp] = FootprintNode(price=ltp)
+                        state.footprint[ltp] = FootprintNode.model_construct(
+                            price=ltp,
+                            bid_volume=0,
+                            ask_volume=0,
+                            delta=0,
+                            total_volume=0,
+                            buy_imbalance=False,
+                            sell_imbalance=False
+                        )
                     state.footprint[ltp].bid_volume += trade_size
                 else:
                     state.unknown_volume += trade_size

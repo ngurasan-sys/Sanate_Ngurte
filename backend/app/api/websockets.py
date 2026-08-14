@@ -17,7 +17,8 @@ class ConnectionManager:
             "quant": {},
             "decisions": {},
             "risk": {},
-            "execution": {}
+            "execution": {},
+            "order_flow": {}
         }
         event_bus.subscribe("market_update", lambda e: self.broadcast("market", e))
         event_bus.subscribe("oi_update", lambda e: self.broadcast("oi", e))
@@ -25,6 +26,7 @@ class ConnectionManager:
         event_bus.subscribe("risk_passed", lambda e: self.broadcast("risk", e))
         event_bus.subscribe("risk_failed", lambda e: self.broadcast("risk", e))
         event_bus.subscribe("execution_update", lambda e: self.broadcast("execution", e))
+        event_bus.subscribe("order_flow", lambda e: self.broadcast("order_flow", e))
 
     async def connect(self, websocket: WebSocket, channel: str):
         if channel in self.active_connections:

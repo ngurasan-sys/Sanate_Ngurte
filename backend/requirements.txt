@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 duckdb
 numpy
+scipy
 pydantic
 websockets
 pytest

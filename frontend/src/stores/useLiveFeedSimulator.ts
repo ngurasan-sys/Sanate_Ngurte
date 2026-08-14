@@ -42,7 +42,7 @@ export function useLiveFeedSimulator() {
       try {
         console.log(`[Sanate] Connecting to WebSocket: ${wsUrl}`);
 
-        setWsStatus('CONNECTING');
+        setWsStatus('RECONNECTING');
 
         ws = new WebSocket(wsUrl);
         wsRef.current = ws;
