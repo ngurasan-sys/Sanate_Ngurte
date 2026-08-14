@@ -15,6 +15,7 @@ export type NavigationPage =
   | 'ORDER_FLOW'
   | 'QUANT'
   | 'STRATEGY_MONITOR'
+  | 'GAP_OPENING_STRATEGIES'
   | 'LIVE_SIGNALS'
   | 'BACKTEST'
   | 'DECISION_INTEL'
@@ -24,7 +25,8 @@ export type NavigationPage =
   | 'RISK'
   | 'UPSTOX'
   | 'SYSTEM_HEALTH'
-  | 'DATA_FEED';
+  | 'DATA_FEED'
+  | 'TRENDING_OI_PA';
 
 interface UIState {
   sidebarExpanded: boolean;

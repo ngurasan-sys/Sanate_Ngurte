@@ -64,6 +64,7 @@ class CandleAggregator:
 class TickProcessor:
     def __init__(self):
         self.aggregators = [
+            CandleAggregator(timeframe_minutes=3),
             CandleAggregator(timeframe_minutes=5),
             CandleAggregator(timeframe_minutes=15)
         ]

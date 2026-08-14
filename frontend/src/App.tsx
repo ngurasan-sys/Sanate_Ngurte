@@ -15,6 +15,7 @@ import OptionChainPanel from './components/OptionChainPanel';
 import GreeksPanel from './components/GreeksPanel';
 import LevelPanel from './components/LevelPanel';
 import StrategyPanel from './components/StrategyPanel';
+import GapOpeningStrategyPanel from './components/GapOpeningStrategyPanel';
 import DecisionPanel from './components/DecisionPanel';
 import DetailDrawer from './components/DetailDrawer';
 import RiskPanel from './components/RiskPanel';
@@ -24,6 +25,7 @@ import BrokeragePanel from './components/BrokeragePanel';
 import EmptyState from './components/EmptyState';
 import InteractiveChartView from './views/InteractiveChartView';
 import AlgoDashboardView from './views/AlgoDashboardView';
+import { TrendingOIPAView } from './views/TrendingOIPAView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -92,6 +94,9 @@ export const App: React.FC = () => {
     switch (activePage) {
       case 'ALGO_DASHBOARD':
         return <AlgoDashboardView />;
+
+      case 'TRENDING_OI_PA':
+        return <TrendingOIPAView />;
 
       case 'DASHBOARD':
         return (
@@ -321,6 +326,9 @@ export const App: React.FC = () => {
 
       case 'STRATEGY_MONITOR':
         return <StrategyPanel />;
+
+      case 'GAP_OPENING_STRATEGIES':
+        return <GapOpeningStrategyPanel />;
 
       case 'LIVE_SIGNALS':
         return (
