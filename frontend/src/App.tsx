@@ -22,6 +22,7 @@ import PositionPanel from './components/PositionPanel';
 import OrderPanel from './components/OrderPanel';
 import BrokeragePanel from './components/BrokeragePanel';
 import EmptyState from './components/EmptyState';
+import InteractiveChartView from './views/InteractiveChartView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -195,6 +196,9 @@ export const App: React.FC = () => {
             <LevelPanel />
           </div>
         );
+
+      case 'INTERACTIVE_CHART':
+        return <InteractiveChartView />;
 
       case 'SPOT_OI':
         return <OIPanel />;
