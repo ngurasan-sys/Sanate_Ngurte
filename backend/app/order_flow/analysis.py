@@ -46,8 +46,17 @@ def calculate_spread_and_mid(best_bid, best_ask):
     return spread, mid_price
 
 def calculate_depth_imbalance(bids, asks, levels):
-    bid_sum = sum(b.quantity for b in bids[:levels]) if bids else 0
-    ask_sum = sum(a.quantity for a in asks[:levels]) if asks else 0
+    bid_sum = 0
+    ask_sum = 0
+
+    # Bids / asks are now dicts due to our optimization
+    if bids:
+        for i in range(min(levels, len(bids))):
+            bid_sum += bids[i]["quantity"]
+
+    if asks:
+        for i in range(min(levels, len(asks))):
+            ask_sum += asks[i]["quantity"]
 
     total = bid_sum + ask_sum
     if total == 0:

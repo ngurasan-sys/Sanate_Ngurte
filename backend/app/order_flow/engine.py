@@ -38,9 +38,31 @@ class OrderFlowEngine:
         timestamp = tick.get("ltt", tick.get("exchange_timestamp", 0))
 
         if instrument_key not in self.states:
-            self.states[instrument_key] = OrderFlowState(
+            self.states[instrument_key] = OrderFlowState.model_construct(
                 instrument_key=instrument_key,
-                timestamp=timestamp
+                timestamp=timestamp,
+                timeframe="1m",
+                classification_mode="UNKNOWN",
+                classification_confidence=0.0,
+                trade_size=0,
+                trade_size_source="NONE",
+                volume_quality="UNKNOWN",
+                buy_volume=0,
+                sell_volume=0,
+                unknown_volume=0,
+                bar_delta=0,
+                cvd=0,
+                spread=None,
+                mid_price=None,
+                depth=DepthData.model_construct(bids=[], asks=[]),
+                depth_imbalance_1=None,
+                depth_imbalance_3=None,
+                depth_imbalance_5=None,
+                depth_imbalance_10=None,
+                depth_imbalance_20=None,
+                depth_imbalance_30=None,
+                greeks=None,
+                footprint={}
             )
 
         state = self.states[instrument_key]
@@ -50,7 +72,9 @@ class OrderFlowEngine:
         greeks_data = tick.get("greeks")
         if greeks_data:
             if state.greeks is None:
-                state.greeks = Greeks()
+                state.greeks = Greeks.model_construct(
+                    delta=None, gamma=None, vega=None, theta=None, iv=None
+                )
             for k, v in greeks_data.items():
                 if v is not None:
                     setattr(state.greeks, k, v)
@@ -59,13 +83,13 @@ class OrderFlowEngine:
         depth = tick.get("market_depth")
         if depth:
             if "bids" in depth:
-                state.depth.bids = [DepthLevel(**b) for b in depth["bids"][:30]]
+                state.depth.bids = [{"price": b["price"], "quantity": b["quantity"], "orders": b["orders"]} for b in depth["bids"][:30]]
                 if state.depth.bids:
-                    raw["best_bid"] = state.depth.bids[0].price
+                    raw["best_bid"] = state.depth.bids[0]["price"]
             if "asks" in depth:
-                state.depth.asks = [DepthLevel(**a) for a in depth["asks"][:30]]
+                state.depth.asks = [{"price": a["price"], "quantity": a["quantity"], "orders": a["orders"]} for a in depth["asks"][:30]]
                 if state.depth.asks:
-                    raw["best_ask"] = state.depth.asks[0].price
+                    raw["best_ask"] = state.depth.asks[0]["price"]
 
             state.spread, state.mid_price = calculate_spread_and_mid(raw["best_bid"], raw["best_ask"])
 
@@ -117,12 +141,18 @@ class OrderFlowEngine:
                 if direction == "AGGRESSIVE_BUY":
                     state.buy_volume += trade_size
                     if ltp not in state.footprint:
-                        state.footprint[ltp] = FootprintNode(price=ltp)
+                        state.footprint[ltp] = FootprintNode.model_construct(
+                            price=ltp, bid_volume=0, ask_volume=0, delta=0, total_volume=0,
+                            buy_imbalance=False, sell_imbalance=False
+                        )
                     state.footprint[ltp].ask_volume += trade_size
                 elif direction == "AGGRESSIVE_SELL":
                     state.sell_volume += trade_size
                     if ltp not in state.footprint:
-                        state.footprint[ltp] = FootprintNode(price=ltp)
+                        state.footprint[ltp] = FootprintNode.model_construct(
+                            price=ltp, bid_volume=0, ask_volume=0, delta=0, total_volume=0,
+                            buy_imbalance=False, sell_imbalance=False
+                        )
                     state.footprint[ltp].bid_volume += trade_size
                 else:
                     state.unknown_volume += trade_size

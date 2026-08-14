@@ -128,8 +128,9 @@ def test_depth_imbalance():
     from backend.app.order_flow.models import DepthLevel
     from backend.app.order_flow.analysis import calculate_depth_imbalance
 
-    bids = [DepthLevel(price=100, quantity=100, orders=1), DepthLevel(price=99, quantity=200, orders=2)]
-    asks = [DepthLevel(price=101, quantity=100, orders=1), DepthLevel(price=102, quantity=50, orders=1)]
+    # Using dicts now due to hot path optimizations
+    bids = [{"price": 100, "quantity": 100, "orders": 1}, {"price": 99, "quantity": 200, "orders": 2}]
+    asks = [{"price": 101, "quantity": 100, "orders": 1}, {"price": 102, "quantity": 50, "orders": 1}]
 
     # Imbalance 1: bid=100, ask=100, total=200 -> 0.0
     assert calculate_depth_imbalance(bids, asks, 1) == 0.0
@@ -173,7 +174,6 @@ def test_stacked_imbalance():
     check_stacked_imbalance(footprint, min_consecutive=3)
     # The logic correctly counts it but doesn't store state yet based on the requirement,
     # so we just ensure it runs without error.
-
 
 def test_negative_cumulative_delta():
     # cumulative delta is negative, which is impossible in a single session unless reset
