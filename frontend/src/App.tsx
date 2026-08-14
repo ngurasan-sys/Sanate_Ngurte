@@ -16,6 +16,7 @@ import GreeksPanel from './components/GreeksPanel';
 import LevelPanel from './components/LevelPanel';
 import StrategyPanel from './components/StrategyPanel';
 import GapOpeningStrategyPanel from './components/GapOpeningStrategyPanel';
+import ThreeMinuteGapPanel from './components/ThreeMinuteGapPanel';
 import DecisionPanel from './components/DecisionPanel';
 import DetailDrawer from './components/DetailDrawer';
 import RiskPanel from './components/RiskPanel';
@@ -337,7 +338,8 @@ export const App: React.FC = () => {
 
       case 'GAP_OPENING_STRATEGIES':
         return <GapOpeningStrategyPanel />;
-
+      case 'THREE_MINUTE_GAP':
+        return <ThreeMinuteGapPanel />;
       case 'LIVE_SIGNALS':
         return (
           <div className="space-y-6 select-none">
