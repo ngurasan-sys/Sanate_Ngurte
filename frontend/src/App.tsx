@@ -27,6 +27,7 @@ import InteractiveChartView from './views/InteractiveChartView';
 import AlgoDashboardView from './views/AlgoDashboardView';
 import { TrendingOIPAView } from './views/TrendingOIPAView';
 import { PullbackChopFilterView } from './views/PullbackChopFilterView';
+import { TwoCandleView } from './views/TwoCandleView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -101,6 +102,9 @@ export const App: React.FC = () => {
 
       case 'PULLBACK_CHOP_FILTER':
         return <PullbackChopFilterView />;
+
+      case 'TWO_CANDLE':
+        return <TwoCandleView />;
 
       case 'DASHBOARD':
         return (

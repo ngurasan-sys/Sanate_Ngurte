@@ -18,7 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  Link2
+  Link2,
+  Crosshair
 } from 'lucide-react';
 
 interface SidebarItemProps {
@@ -77,6 +78,7 @@ export const Sidebar: React.FC = () => {
         { label: 'Backtest', icon: FileText, page: 'BACKTEST' },
         { label: 'Trending OI + Price Action', icon: Flame, page: 'TRENDING_OI_PA' },
         { label: 'Pullback Chop Filter', icon: Activity, page: 'PULLBACK_CHOP_FILTER' },
+        { label: '2 Candle Scalper', icon: Crosshair, page: 'TWO_CANDLE' },
       ],
     },
     {
