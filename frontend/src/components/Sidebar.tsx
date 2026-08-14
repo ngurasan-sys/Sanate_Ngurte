@@ -55,6 +55,7 @@ export const Sidebar: React.FC = () => {
       items: [
         { label: 'Spot Trending OI', icon: Flame, page: 'SPOT_OI' },
         { label: 'Future Trending OI', icon: TrendingUp, page: 'FUTURE_OI' },
+        { label: 'Trending OI Crossover', icon: Flame, page: 'TRENDING_OI_CROSSOVER' },
         { label: 'Option Chain', icon: Layers, page: 'OPTION_CHAIN' },
       ],
     },

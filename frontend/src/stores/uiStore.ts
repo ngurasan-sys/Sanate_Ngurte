@@ -26,7 +26,8 @@ export type NavigationPage =
   | 'UPSTOX'
   | 'SYSTEM_HEALTH'
   | 'DATA_FEED'
-  | 'TRENDING_OI_PA';
+  | 'TRENDING_OI_PA'
+  | 'TRENDING_OI_CROSSOVER';
 
 interface UIState {
   sidebarExpanded: boolean;

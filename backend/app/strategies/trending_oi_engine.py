@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.models import Tick
 from backend.app.oi.models import OITick
+from backend.app.strategies.trending_oi_price_action.engine import trending_oi_pa_engine
+
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,9 @@ class SpotTrendingOIEngine:
             "dlb_oi": False,
             "sentiment": "Neutral",
             "ce_oi": 0,
-            "pe_oi": 0
+            "pe_oi": 0,
+            "crossover": "NO_CROSSOVER",
+            "crossover_timestamp": None
         }
 
     def process_tick(self, tick: Tick):
@@ -185,6 +189,32 @@ class SpotTrendingOIEngine:
         row["ce_oi"] = sum(s["oi"] for s in self.ce_state.values())
         row["pe_oi"] = sum(s["oi"] for s in self.pe_state.values())
 
+        row["crossover"] = "NO_CROSSOVER"
+        row["crossover_timestamp"] = None
+
+        curr_call_oi = row["ce_oi"]
+        curr_put_oi = row["pe_oi"]
+
+        if self.completed_rows:
+            # Find the last dominant side
+            last_dominant = None
+            for r in reversed(self.completed_rows):
+                if r["ce_oi"] > r["pe_oi"]:
+                    last_dominant = "CALL"
+                    break
+                elif r["pe_oi"] > r["ce_oi"]:
+                    last_dominant = "PUT"
+                    break
+
+            if last_dominant == "CALL" and curr_put_oi > curr_call_oi:
+                row["crossover"] = "BULLISH_CROSSOVER"
+                row["crossover_timestamp"] = row["time"]
+            elif last_dominant == "PUT" and curr_call_oi > curr_put_oi:
+                row["crossover"] = "BEARISH_CROSSOVER"
+                row["crossover_timestamp"] = row["time"]
+
+
+
         # D.H.B / D.L.B
         if self.completed_rows:
             max_p = max(r["ltp"] for r in self.completed_rows)
@@ -300,11 +330,7 @@ class TrendingOIEngine:
         while self.running:
             await asyncio.sleep(1) # Publish at 1Hz
 
-            spot_payload = {
-                "type": "tick_update",
-                "view": "spot_trending_oi",
-                "underlying": "NIFTY",
-                "row": {
+            row = {
                     "time": self.spot_engine.current_row["time"],
                     "differenceOi": self.spot_engine.current_row["diff_oi"],
                     "strength": max(0, min(100, int(abs(self.spot_engine.current_row.get("direction_pct", 0))))),
@@ -315,8 +341,25 @@ class TrendingOIEngine:
                     "peOi": self.spot_engine.current_row["pe_oi"],
                     "changeCeOi": self.spot_engine.current_row["chg_call_oi"],
                     "changePeOi": self.spot_engine.current_row["chg_put_oi"],
-                    "ltp": self.spot_engine.current_row["ltp"]
+                    "ltp": self.spot_engine.current_row["ltp"],
+                    "crossover": self.spot_engine.current_row.get("crossover", "NO_CROSSOVER"),
+                    "crossover_timestamp": self.spot_engine.current_row.get("crossover_timestamp")
                 }
+
+            # Inject execution state if available
+            pa_state = trending_oi_pa_engine.positions.get("NIFTY FUT", {})
+            row["execution_state"] = pa_state.get("position_state", "IDLE")
+            row["trade_valid"] = pa_state.get("trade_valid", True)
+            row["rejection_reason"] = pa_state.get("rejection_reason", "")
+            row["time_filter_status"] = pa_state.get("time_filter_status", "VALID")
+            row["distance_filter_status"] = pa_state.get("distance_filter_status", "VALID")
+            row["vwap_supertrend_distance"] = pa_state.get("vwap_supertrend_distance", 0.0)
+
+            spot_payload = {
+                "type": "tick_update",
+                "view": "spot_trending_oi",
+                "underlying": "NIFTY",
+                "row": row
             }
 
             future_payload = {
