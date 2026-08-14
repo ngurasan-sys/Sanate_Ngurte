@@ -15,6 +15,7 @@ export type NavigationPage =
   | 'ORDER_FLOW'
   | 'QUANT'
   | 'STRATEGY_MONITOR'
+  | 'GAP_OPENING_STRATEGIES'
   | 'LIVE_SIGNALS'
   | 'BACKTEST'
   | 'DECISION_INTEL'
