@@ -155,6 +155,19 @@ export const mockFutureTrendingOI: Record<'NIFTY' | 'SENSEX', FutureTrendingOIIt
 
 export const mockStrategies: Strategy[] = [
   {
+    id: 'gap_opening_strategies',
+    name: 'Gap Opening Strategies',
+    status: 'ACTIVE',
+    signal: 'BUY CE',
+    confidence: 85,
+    pnl: 0.00,
+    parameters: { timeFrame: '5m', gapPercentMin: 0.1, atrExhaustionThreshold: 0.95 },
+    indicators: { VWAP: 24485.50, SuperTrend: 24460.00 },
+    levels: { support: [24400], resistance: [24600] },
+    oi: 'Trending OI Bullish, +1,250,000 contracts',
+    historicalStats: { winRate: 68.5, totalTrades: 215 }
+  },
+  {
     id: 'strat-15m-breakout',
     name: '15-Min Breakout',
     status: 'ACTIVE',
