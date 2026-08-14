@@ -1,14 +1,37 @@
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+from enum import Enum
 from pydantic import BaseModel
 import logging
 
 from app.core.event_bus import event_bus
-from app.market_data.models import Tick
+from app.market_data.models import Tick, Candle
 from app.oi.models import OITick
 from app.core.indicators import Supertrend
+from app.strategies.trending_oi_price_action.indicators import DailyATR
 
 logger = logging.getLogger(__name__)
+
+class OhOlState(str, Enum):
+    IDLE = "IDLE"
+    O_H_DETECTED = "O_H_DETECTED"
+    O_L_DETECTED = "O_L_DETECTED"
+    O_H_OPENING_BLOCKED = "O_H_OPENING_BLOCKED"
+    O_L_OPENING_BLOCKED = "O_L_OPENING_BLOCKED"
+    O_H_CONFIRMED = "O_H_CONFIRMED"
+    O_L_CONFIRMED = "O_L_CONFIRMED"
+    O_H_WAITING_PULLBACK = "O_H_WAITING_PULLBACK"
+    O_L_WAITING_PULLBACK = "O_L_WAITING_PULLBACK"
+    O_H_TIER_1 = "O_H_TIER_1"
+    O_H_TIER_2 = "O_H_TIER_2"
+    O_L_TIER_1 = "O_L_TIER_1"
+    O_L_TIER_2 = "O_L_TIER_2"
+    PARTIAL_PROFIT = "PARTIAL_PROFIT"
+    BREAKEVEN = "BREAKEVEN"
+    TRAILING = "TRAILING"
+    ATR_EXHAUSTED = "ATR_EXHAUSTED"
+    INVALIDATED = "INVALIDATED"
+    EXITED = "EXITED"
 
 class TargetState(BaseModel):
     instrument: str
@@ -23,6 +46,23 @@ class TargetState(BaseModel):
     active: bool = True
     consumed: bool = False
 
+    # New fields for state tracking
+    state: OhOlState = OhOlState.IDLE
+    probability: float = 0.0
+    probability_components: dict = {}
+    oi_shift: float = 0.0
+    oi_conviction: float = 0.0
+    day_breakout_confirmed: bool = False
+    atr_exhausted: bool = False
+    movement_from_previous_close: float = 0.0
+    pullback_level: Optional[str] = None
+    tier: int = 0
+    stop_loss: Optional[float] = None
+    trailing_stop: Optional[float] = None
+    entry_price: Optional[float] = None
+    lots: int = 0
+    partial_profit_booked: bool = False
+
 class OhOlStrategy:
     def __init__(self, strategy_id: str = "oh_ol"):
         self.strategy_id = strategy_id
@@ -34,6 +74,13 @@ class OhOlStrategy:
         self.minimum_option_strikes = 3
         self.oi_ratio_threshold = 1.8
 
+        self.tier_1_lots = 2
+        self.tier_2_lots = 4
+        self.min_oi_shift = 500000.0  # Example configurable value
+        self.sl_buffer_points = 5.0
+        self.tier_1_profit_trigger_points = 20.0
+        self.opening_prob_threshold = 90.0
+
         self.running = False
 
         # State
@@ -42,7 +89,10 @@ class OhOlStrategy:
         self.last_signal_time = None
 
         # Tracking instrument prices
-        self.instrument_prices: Dict[str, Dict[str, float]] = {}
+        self.previous_oi_diff = 0.0
+        self.current_oi_diff = 0.0
+
+        self.instrument_prices: Dict[str, Dict[str, Any]] = {}
 
         # Tracking total OI for calls/puts
         self.total_call_oi_change = 0
@@ -65,6 +115,8 @@ class OhOlStrategy:
         # Subscribe to market ticks
         event_bus.subscribe("MARKET_TICK", self.process_tick)
         event_bus.subscribe("OI_TICK", self.process_oi_tick)
+        event_bus.subscribe("trending_oi", self._handle_trending_oi)
+        event_bus.subscribe("CANDLE_CLOSED", self._handle_candle_closed)
 
     def stop(self):
         self.running = False
@@ -87,6 +139,11 @@ class OhOlStrategy:
                 "high": 0.0,
                 "low": 0.0,
                 "close": 0.0,
+                "current_day_high": -float("inf"),
+                "current_day_low": float("inf"),
+                "current_day_str": "",
+                "daily_atr": DailyATR(period=14),
+                "previous_day_close": 0.0,
             }
         return self.instrument_prices[instrument]
 
@@ -152,6 +209,8 @@ class OhOlStrategy:
             )
             self._update_target_list(target)
 
+        await self._evaluate_candidates(tick, state)
+
         # Mark targets as tested if reached
         self._check_target_tests(instrument, price, tick.timestamp)
 
@@ -163,6 +222,11 @@ class OhOlStrategy:
             if target.instrument == new_target.instrument and target.target_type == new_target.target_type:
                 # Update existing un-tested target or ignore
                 return
+
+        if new_target.target_type == "OH":
+            new_target.state = OhOlState.O_H_DETECTED
+        else:
+            new_target.state = OhOlState.O_L_DETECTED
 
         self.targets.append(new_target)
         logger.info(f"Target Detected: {new_target.target_type} on {new_target.instrument} at {new_target.target_price}")
@@ -179,14 +243,19 @@ class OhOlStrategy:
 
     def _check_exits(self, instrument: str, price: float, timestamp: datetime):
         if not self.active_position:
-            return
+            pass # Keep evaluating for FUT tests even if not active
 
-        # Exit strategy: If we are in an active position for OH setup, and FUT hits OH target, exit.
         if "FUT" in instrument:
             for target in self.targets:
-                if target.instrument == instrument and target.option_type == "FUT" and target.tested:
-                    # Target hit, exit.
-                    self._execute_exit(instrument, timestamp, "Target Reached")
+                if getattr(target, 'state', None) in [OhOlState.O_H_TIER_1, OhOlState.O_L_TIER_1, OhOlState.O_H_TIER_2, OhOlState.O_L_TIER_2, OhOlState.BREAKEVEN, OhOlState.TRAILING, "O_H_TIER_1", "O_L_TIER_1", "O_H_TIER_2", "O_L_TIER_2", "BREAKEVEN", "TRAILING"]:
+                    if target.instrument == instrument and target.option_type == "FUT" and target.tested:
+                        # Target hit, exit.
+                        self._execute_exit(instrument, timestamp, "Target Reached")
+                        target.state = OhOlState.EXITED
+                        target.active = False
+                elif getattr(target, 'state', None) in [OhOlState.O_H_WAITING_PULLBACK, OhOlState.O_L_WAITING_PULLBACK, "O_H_WAITING_PULLBACK", "O_L_WAITING_PULLBACK", OhOlState.O_H_DETECTED, OhOlState.O_L_DETECTED]:
+                     if target.instrument == instrument and target.option_type == "FUT" and target.tested:
+                        pass # Don't exit early, continue logic!
 
     def _execute_exit(self, instrument: str, timestamp: datetime, reason: str):
         if self.active_position:
@@ -225,7 +294,7 @@ class OhOlStrategy:
             return 0.0 if self.total_call_oi_change <= 0 else float('inf')
         return self.total_call_oi_change / self.total_put_oi_change
 
-    async def emit_signal(self, instrument: str, direction: str, confidence: float, evidence: str):
+    async def emit_signal(self, instrument: str, direction: str, confidence: float, evidence: str, extra_state: dict = None):
         self.active_position = True
         self.last_signal_time = datetime.now()
         signal = {
@@ -237,6 +306,9 @@ class OhOlStrategy:
             "confidence": confidence,
             "evidence": evidence
         }
+        if extra_state:
+            signal.update(extra_state)
+
         await event_bus.publish("STRATEGY_SIGNAL", signal)
 
     async def evaluate_morning_setup(self, tick: OITick):
@@ -311,3 +383,328 @@ class OhOlStrategy:
                     confidence=90.0,
                     evidence="Afternoon O=L Breakdown Scalp"
                 )
+
+    async def _handle_trending_oi(self, data: dict):
+        if not self.running:
+            return
+
+        if data.get("type") == "tick_update" and data.get("view") == "spot_trending_oi":
+            row = data.get("row", {})
+            diff_oi = row.get("differenceOi", 0.0)
+            instrument = data.get("underlying", "NIFTY")
+
+            # Since the global variables were flawed, let's keep them dictionary based per instrument
+            if not hasattr(self, 'oi_states'):
+                self.oi_states = {}
+
+            if instrument not in self.oi_states:
+                self.oi_states[instrument] = {"current": diff_oi, "previous": 0.0} # Assume previous was 0 to capture initial shift
+            else:
+                self.oi_states[instrument]["previous"] = self.oi_states[instrument]["current"]
+                self.oi_states[instrument]["current"] = diff_oi
+
+            oi_shift = self.oi_states[instrument]["current"] - self.oi_states[instrument]["previous"]
+
+            for target in self.targets:
+                if instrument in target.instrument: # Basic check for NIFTY vs BANKNIFTY
+                    target.oi_shift = oi_shift
+                    target.oi_conviction = row.get("strength", 0.0)
+
+    async def _handle_candle_closed(self, candle: Candle):
+        if not self.running:
+            return
+
+        if candle.timeframe == "1d":
+            # For daily ATR tracking
+            instrument = candle.instrument
+            state = self._get_or_create_instrument_state(instrument)
+            state["previous_day_close"] = candle.close
+            state["daily_atr"].add_daily_candle(candle.high, candle.low, candle.close)
+
+        elif candle.timeframe == "3m":
+            # Tracking intraday high/low
+            instrument = candle.instrument
+            state = self._get_or_create_instrument_state(instrument)
+
+            day_str = candle.timestamp.strftime("%Y-%m-%d")
+            if state["current_day_str"] != day_str:
+                state["current_day_str"] = day_str
+                state["current_day_high"] = candle.high
+                state["current_day_low"] = candle.low
+            else:
+                state["current_day_high"] = max(state["current_day_high"], candle.high)
+                state["current_day_low"] = min(state["current_day_low"], candle.low)
+
+            # Strict VWAP Invalidation
+            for target in self.targets:
+                if getattr(target, 'active', True) and getattr(target, 'state', None) in [OhOlState.O_H_TIER_1, OhOlState.O_L_TIER_1, OhOlState.O_H_TIER_2, OhOlState.O_L_TIER_2, OhOlState.BREAKEVEN, OhOlState.TRAILING]:
+                    invalidated = False
+                    if target.target_type == "OH" and candle.close < self.vwap:
+                        invalidated = True
+                    elif target.target_type == "OL" and candle.close > self.vwap:
+                        invalidated = True
+
+                    if invalidated:
+                        target.state = OhOlState.INVALIDATED
+                        target.active = False
+                        self._execute_exit(target.instrument, candle.timestamp, "3-min Candle Close Invalidation (VWAP)")
+                        continue
+
+                # Candle-by-candle Trailing Stop
+                if target.active and target.state in [OhOlState.BREAKEVEN, OhOlState.TRAILING]:
+                    if target.target_type == "OH":
+                        new_stop = candle.low - self.sl_buffer_points
+                        if target.trailing_stop is None or new_stop > target.trailing_stop:
+                            target.trailing_stop = new_stop
+                            target.state = OhOlState.TRAILING
+                    elif target.target_type == "OL":
+                        new_stop = candle.high + self.sl_buffer_points
+                        if target.trailing_stop is None or new_stop < target.trailing_stop:
+                            target.trailing_stop = new_stop
+                            target.state = OhOlState.TRAILING
+
+    def _calculate_probability(self, target: TargetState, state: Dict[str, Any], price: float) -> float:
+        score = 0.0
+        components = {}
+
+        # 1. OI Conviction (max 30)
+        oi_score = min(target.oi_conviction, 100) * 0.3
+        score += oi_score
+        components["oi_conviction"] = oi_score
+
+        # 2. VWAP Relation (max 20)
+        vwap_score = 0.0
+        if self.vwap > 0:
+            if target.target_type == "OH" and price > self.vwap:
+                vwap_score = 20.0
+            elif target.target_type == "OL" and price < self.vwap:
+                vwap_score = 20.0
+        score += vwap_score
+        components["vwap"] = vwap_score
+
+        # 3. SuperTrend Relation (max 20)
+        st_score = 0.0
+        if target.target_type == "OH" and self.current_supertrend_dir == 1:
+            st_score = 20.0
+        elif target.target_type == "OL" and self.current_supertrend_dir == -1:
+            st_score = 20.0
+        score += st_score
+        components["supertrend"] = st_score
+
+        # 4. Day Breakout (max 20)
+        br_score = 0.0
+        if target.target_type == "OH" and price > state.get("current_day_high", float('inf')):
+            br_score = 20.0
+        elif target.target_type == "OL" and price < state.get("current_day_low", -float('inf')):
+            br_score = 20.0
+        # If it's early in the day, the breakout logic might just be comparing to open.
+        # But this is deterministic.
+        if target.day_breakout_confirmed:
+             br_score = 20.0
+        score += br_score
+        components["breakout"] = br_score
+
+        # 5. ATR Buffer (max 10)
+        atr_score = 0.0
+        if not target.atr_exhausted:
+            atr_score = 10.0
+        score += atr_score
+        components["atr"] = atr_score
+
+        target.probability_components = components
+        target.probability = score
+        return score
+
+    async def _evaluate_candidates(self, tick: Tick, state: Dict[str, Any]):
+        if not self.running:
+            return
+
+        current_time = tick.timestamp.time()
+        is_opening = current_time < datetime.strptime("09:30:00", "%H:%M:%S").time()
+
+        for target in self.targets:
+            if target.consumed or not target.active:
+                continue
+
+            if target.state == OhOlState.IDLE or target.state == "IDLE":
+                if target.target_type == "OH":
+                    target.state = OhOlState.O_H_DETECTED
+                else:
+                    target.state = OhOlState.O_L_DETECTED
+
+            if target.state == OhOlState.EXITED or target.state == "EXITED":
+                continue
+
+            # Check daily ATR exhaustion
+            prev_close = state.get("previous_day_close", 0.0)
+            daily_atr = state.get("daily_atr")
+            current_atr = None
+            if daily_atr and hasattr(daily_atr, 'atr_values') and len(daily_atr.atr_values) > 0:
+                current_atr = daily_atr.atr_values[-1]
+
+            target.movement_from_previous_close = abs(tick.price - prev_close)
+            if current_atr is not None and target.movement_from_previous_close >= current_atr:
+                target.atr_exhausted = True
+
+                # Block only in the direction of the move and ONLY if not already in an active position
+                if getattr(target, 'state', None) not in [OhOlState.O_H_TIER_1, OhOlState.O_L_TIER_1, OhOlState.O_H_TIER_2, OhOlState.O_L_TIER_2, OhOlState.BREAKEVEN, OhOlState.TRAILING]:
+                    if target.target_type == "OH" and (tick.price - prev_close) >= current_atr:
+                        target.state = OhOlState.ATR_EXHAUSTED
+                    elif target.target_type == "OL" and (prev_close - tick.price) >= current_atr:
+                        target.state = OhOlState.ATR_EXHAUSTED
+                elif target.target_type == "OL" and (prev_close - tick.price) >= current_atr:
+                    target.state = OhOlState.ATR_EXHAUSTED
+
+            # Day Breakout Check
+            if target.target_type == "OH" and tick.price >= state.get("current_day_high", float('inf')):
+                target.day_breakout_confirmed = True
+            elif target.target_type == "OL" and tick.price <= state.get("current_day_low", -float('inf')):
+                target.day_breakout_confirmed = True
+
+            # Calculate Probability
+            prob = self._calculate_probability(target, state, tick.price)
+
+            # Opening Filter
+            if is_opening:
+                if prob < self.opening_prob_threshold:
+                    if target.target_type == "OH":
+                        target.state = OhOlState.O_H_OPENING_BLOCKED
+                    else:
+                        target.state = OhOlState.O_L_OPENING_BLOCKED
+                    continue
+
+            # Restore state if opening block passed
+            if not is_opening and getattr(target, 'state', None) in [OhOlState.O_H_OPENING_BLOCKED, OhOlState.O_L_OPENING_BLOCKED]:
+                if target.target_type == "OH":
+                    target.state = OhOlState.O_H_DETECTED
+                else:
+                    target.state = OhOlState.O_L_DETECTED
+
+            if getattr(target, 'state', None) in [OhOlState.O_H_DETECTED, OhOlState.O_L_DETECTED]:
+                # Require confirmation
+                oi_confirmed = False
+                if target.target_type == "OH" and getattr(target, 'oi_shift', 0) >= self.min_oi_shift:
+                    oi_confirmed = True
+                elif target.target_type == "OL" and getattr(target, 'oi_shift', 0) <= -self.min_oi_shift:
+                    oi_confirmed = True
+
+                if oi_confirmed and getattr(target, 'day_breakout_confirmed', False) and not getattr(target, 'atr_exhausted', False):
+                    if target.target_type == "OH":
+                        target.state = OhOlState.O_H_WAITING_PULLBACK
+                    else:
+                        target.state = OhOlState.O_L_WAITING_PULLBACK
+                    logger.info(f"Target {target.target_type} waiting pullback at {tick.timestamp} for {target.instrument}")
+
+            # Laddered Entry & Pullback Logic
+            if getattr(target, 'state', None) in [OhOlState.O_H_WAITING_PULLBACK, OhOlState.O_L_WAITING_PULLBACK]:
+                # Tier 1 on Supertrend Pullback
+                is_st_touch = False
+                if target.target_type == "OH" and tick.price <= self.current_supertrend:
+                    is_st_touch = True
+                elif target.target_type == "OL" and tick.price >= self.current_supertrend:
+                    is_st_touch = True
+
+                if is_st_touch:
+                    target.state = OhOlState.O_H_TIER_1 if target.target_type == "OH" else OhOlState.O_L_TIER_1
+                    target.tier = 1
+                    target.entry_price = tick.price
+                    target.lots = self.tier_1_lots
+                    target.stop_loss = self.vwap - self.sl_buffer_points if target.target_type == "OH" else self.vwap + self.sl_buffer_points
+                    target.trailing_stop = target.stop_loss
+                    target.pullback_level = "SUPERTREND"
+
+                    # Emit TIER 1 Signal
+                    await self.emit_signal(
+                        instrument=target.instrument,
+                        direction=f"BUY_{target.option_type}",
+                        confidence=target.probability,
+                        evidence=f"Tier 1 Entry at SuperTrend ({tick.price})",
+                        extra_state={
+                            "probability": target.probability,
+                            "probability_threshold": self.opening_prob_threshold,
+                            "oi_shift": target.oi_shift,
+                            "oi_conviction": target.oi_conviction,
+                            "day_breakout_confirmed": target.day_breakout_confirmed,
+                            "atr_exhausted": target.atr_exhausted,
+                            "pullback_level": target.pullback_level,
+                            "tier": target.tier,
+                            "stop_loss": target.stop_loss,
+                            "trailing_stop": target.trailing_stop
+                        }
+                    )
+
+            elif getattr(target, 'state', None) in [OhOlState.O_H_TIER_1, OhOlState.O_L_TIER_1]:
+                # Tier 2 on VWAP Pullback
+                is_vwap_touch = False
+                if target.target_type == "OH" and tick.price <= self.vwap:
+                    is_vwap_touch = True
+                elif target.target_type == "OL" and tick.price >= self.vwap:
+                    is_vwap_touch = True
+
+                if is_vwap_touch:
+                    target.state = OhOlState.O_H_TIER_2 if target.target_type == "OH" else OhOlState.O_L_TIER_2
+                    target.tier = 2
+                    if target.entry_price is not None:
+                        target.entry_price = (target.entry_price * target.lots + tick.price * self.tier_2_lots) / (target.lots + self.tier_2_lots)
+                    else:
+                        target.entry_price = tick.price
+                    target.lots += self.tier_2_lots
+                    target.pullback_level = "VWAP"
+
+                    # Emit TIER 2 Signal
+                    await self.emit_signal(
+                        instrument=target.instrument,
+                        direction=f"BUY_{target.option_type}",
+                        confidence=target.probability,
+                        evidence=f"Tier 2 Entry at VWAP ({tick.price})",
+                        extra_state={
+                            "probability": target.probability,
+                            "probability_threshold": self.opening_prob_threshold,
+                            "oi_shift": target.oi_shift,
+                            "oi_conviction": target.oi_conviction,
+                            "day_breakout_confirmed": target.day_breakout_confirmed,
+                            "atr_exhausted": target.atr_exhausted,
+                            "pullback_level": target.pullback_level,
+                            "tier": target.tier,
+                            "stop_loss": target.stop_loss,
+                            "trailing_stop": target.trailing_stop
+                        }
+                    )
+
+            # Profit Management & Break-even Logic
+            if getattr(target, 'state', None) in [OhOlState.O_H_TIER_1, OhOlState.O_L_TIER_1, OhOlState.O_H_TIER_2, OhOlState.O_L_TIER_2, OhOlState.BREAKEVEN, OhOlState.TRAILING]:
+                is_profitable_enough = False
+                if getattr(target, 'entry_price', None) is not None:
+                    if target.target_type == "OH" and (tick.price - target.entry_price) >= self.tier_1_profit_trigger_points:
+                        is_profitable_enough = True
+                    elif target.target_type == "OL" and (target.entry_price - tick.price) >= self.tier_1_profit_trigger_points:
+                        is_profitable_enough = True
+
+                if is_profitable_enough and not getattr(target, 'partial_profit_booked', False):
+                    target.partial_profit_booked = True
+                    target.stop_loss = target.entry_price
+                    target.trailing_stop = target.entry_price
+                    target.state = OhOlState.BREAKEVEN
+
+                    await self.emit_signal(
+                        instrument=target.instrument,
+                        direction="PARTIAL_PROFIT",
+                        confidence=100.0,
+                        evidence="Booked Partial, Stop Loss moved to Break-even",
+                        extra_state={"lots_to_book": 1} # Book 1 lot
+                    )
+
+            # Intraday Stop Loss Hit (if not waiting for candle close)
+            if getattr(target, 'state', None) in [OhOlState.O_H_TIER_1, OhOlState.O_L_TIER_1, OhOlState.O_H_TIER_2, OhOlState.O_L_TIER_2, OhOlState.BREAKEVEN, OhOlState.TRAILING]:
+                sl_hit = False
+                # Ensure we have an entry price otherwise it's an immediate SL hit on assignment
+                if getattr(target, 'entry_price', None) is not None and getattr(target, 'trailing_stop', None) is not None:
+                    if target.target_type == "OH" and tick.price < target.trailing_stop:
+                        sl_hit = True
+                    elif target.target_type == "OL" and tick.price > target.trailing_stop:
+                        sl_hit = True
+
+                if sl_hit:
+                    target.state = OhOlState.EXITED
+                    target.active = False
+                    self._execute_exit(target.instrument, tick.timestamp, "Trailing Stop Loss Hit")
