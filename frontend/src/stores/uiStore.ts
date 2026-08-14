@@ -25,7 +25,8 @@ export type NavigationPage =
   | 'RISK'
   | 'UPSTOX'
   | 'SYSTEM_HEALTH'
-  | 'DATA_FEED';
+  | 'DATA_FEED'
+  | 'TRENDING_OI_PA';
 
 interface UIState {
   sidebarExpanded: boolean;

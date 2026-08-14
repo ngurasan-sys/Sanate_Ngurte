@@ -25,6 +25,7 @@ import BrokeragePanel from './components/BrokeragePanel';
 import EmptyState from './components/EmptyState';
 import InteractiveChartView from './views/InteractiveChartView';
 import AlgoDashboardView from './views/AlgoDashboardView';
+import { TrendingOIPAView } from './views/TrendingOIPAView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -93,6 +94,9 @@ export const App: React.FC = () => {
     switch (activePage) {
       case 'ALGO_DASHBOARD':
         return <AlgoDashboardView />;
+
+      case 'TRENDING_OI_PA':
+        return <TrendingOIPAView />;
 
       case 'DASHBOARD':
         return (

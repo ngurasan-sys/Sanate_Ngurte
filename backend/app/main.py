@@ -17,6 +17,7 @@ from backend.app.engines.risk import risk_engine
 from backend.app.engines.execution import execution_engine
 from backend.app.order_flow.tick_processor import order_flow_processor
 from backend.app.strategies.trending_oi_engine import trending_oi_engine
+from backend.app.strategies.trending_oi_price_action.engine import trending_oi_pa_engine
 from backend.app.strategies.oh_ol import oh_ol_strategy
 from backend.app.market_data.upstox_v3 import UpstoxV3Client
 
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI):
     execution_engine.start()
     order_flow_processor.start()
     trending_oi_engine.start()
+    trending_oi_pa_engine.start()
     oh_ol_strategy.start()
 
     # Start Upstox stream
@@ -129,6 +131,8 @@ async def lifespan(app: FastAPI):
         if hasattr(trending_oi_engine, "stop"):
             trending_oi_engine.stop()
 
+        if hasattr(trending_oi_pa_engine, "stop"):
+            trending_oi_pa_engine.stop()
         if hasattr(oh_ol_strategy, "stop"):
             oh_ol_strategy.stop()
 
