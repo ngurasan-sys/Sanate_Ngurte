@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import AppShell from './components/AppShell';
 import { useUiStore } from './stores/uiStore';
 import { useMarketStore } from './stores/marketStore';
@@ -22,6 +22,7 @@ import PositionPanel from './components/PositionPanel';
 import OrderPanel from './components/OrderPanel';
 import BrokeragePanel from './components/BrokeragePanel';
 import EmptyState from './components/EmptyState';
+import InteractiveChartView from './views/InteractiveChartView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -32,6 +33,8 @@ export const App: React.FC = () => {
   const { activePage } = useUiStore();
   const { indices } = useMarketStore();
   const { totalPnl, todayPnl, positions } = usePortfolioStore();
+
+  const activePositionsCount = useMemo(() => positions.filter(p => p.status === 'ACTIVE').length, [positions]);
 
   // Control for Decision Detail Drawer
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null);
@@ -119,7 +122,7 @@ export const App: React.FC = () => {
                 />
                 <MetricCard
                   label="Active Positions"
-                  value={positions.filter(p => p.status === 'ACTIVE').length}
+                  value={activePositionsCount}
                   subValue="Working on market"
                 />
                 <MetricCard
@@ -195,6 +198,9 @@ export const App: React.FC = () => {
             <LevelPanel />
           </div>
         );
+
+      case 'INTERACTIVE_CHART':
+        return <InteractiveChartView />;
 
       case 'SPOT_OI':
         return <OIPanel />;

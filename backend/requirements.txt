@@ -1,8 +1,10 @@
 fastapi
-uvicorn
+uvicorn[standard]
 duckdb
 numpy
+scipy
 pydantic
 websockets
 pytest
 httpx
+pytest-asyncio

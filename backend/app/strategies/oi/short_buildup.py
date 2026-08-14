@@ -1,6 +1,6 @@
 from typing import Optional
 from .base import BaseOIStrategy
-from backend.app.oi.models import OIState, OITick, OIStrategyOutput
+from app.oi.models import OIState, OITick, OIStrategyOutput
 
 class ShortBuildupStrategy(BaseOIStrategy):
     """

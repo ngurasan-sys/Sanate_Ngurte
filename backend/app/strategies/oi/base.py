@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
-from backend.app.oi.models import OIState, OITick, OIStrategyOutput
+from app.oi.models import OIState, OITick, OIStrategyOutput
 
 class BaseOIStrategy(ABC):
     """Base class for all OI Strategies"""

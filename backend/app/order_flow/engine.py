@@ -1,5 +1,5 @@
-from typing import Dict, Optional, Any
-from .models import OrderFlowState, FootprintNode, DepthLevel, DepthData, Greeks
+from typing import Dict, Optional, Any, Tuple
+from .models import OrderFlowState, FootprintNode, DepthLevel
 from .analysis import (
     calculate_trade_size,
     classify_trade_direction,
@@ -8,10 +8,15 @@ from .analysis import (
     calculate_depth_imbalance
 )
 
+
 class OrderFlowEngine:
-    def __init__(self):
+    def __init__(self, depth_limit: int = 30):
+        # Pydantic state objects exposed by the engine (API contract)
         self.states: Dict[str, OrderFlowState] = {}
+        # raw_state stores lightweight metadata and caches to avoid repeated work
         self.raw_state: Dict[str, Dict[str, Any]] = {}
+        # maximum depth we keep / construct
+        self.depth_limit = depth_limit
 
     def get_state(self, instrument_key: str) -> Optional[OrderFlowState]:
         return self.states.get(instrument_key)
@@ -24,10 +29,33 @@ class OrderFlowEngine:
                 "current_cumulative_volume": None,
                 "best_bid": None,
                 "best_ask": None,
-                "last_classification": "UNKNOWN"
+                "last_classification": "UNKNOWN",
+                # caching fingerprint of last processed depth to avoid Pydantic re-construction
+                "depth_fingerprint": ((), ()),  # (bids_fp, asks_fp)
             }
 
+    def _depth_fingerprint(self, depth_section: list) -> Tuple[Tuple, ...]:
+        """Create a small, hashable fingerprint for a depth list of dicts.
+        Each element is (price, quantity, orders) truncated to depth_limit.
+        """
+        fp = []
+        limit = self.depth_limit
+        for i, d in enumerate(depth_section):
+            if i >= limit:
+                break
+            # make sure we use primitive types only
+            price = d.get("price")
+            qty = d.get("quantity")
+            orders = d.get("orders")
+            fp.append((price, qty, orders))
+        return tuple(fp)
+
     def process_tick(self, tick: dict) -> Optional[OrderFlowState]:
+        """Process a single tick. Optimized hot path with caching to avoid
+        unnecessary Pydantic construction and repeated computations.
+
+        Returns the OrderFlowState for the instrument (preserves API contract).
+        """
         instrument_key = tick.get("instrument_key")
         if not instrument_key:
             return None
@@ -37,85 +65,110 @@ class OrderFlowEngine:
 
         timestamp = tick.get("ltt", tick.get("exchange_timestamp", 0))
 
+        # lazily create Pydantic state object only when first needed
         if instrument_key not in self.states:
-            self.states[instrument_key] = OrderFlowState.model_construct(
+            self.states[instrument_key] = OrderFlowState(
                 instrument_key=instrument_key,
-                timestamp=timestamp,
-                timeframe="1m",
-                classification_mode="UNKNOWN",
-                classification_confidence=0.0,
-                trade_size=0,
-                trade_size_source="NONE",
-                volume_quality="UNKNOWN",
-                buy_volume=0,
-                sell_volume=0,
-                unknown_volume=0,
-                bar_delta=0,
-                cvd=0,
-                spread=None,
-                mid_price=None,
-                depth=DepthData.model_construct(bids=[], asks=[]),
-                depth_imbalance_1=None,
-                depth_imbalance_3=None,
-                depth_imbalance_5=None,
-                depth_imbalance_10=None,
-                depth_imbalance_20=None,
-                depth_imbalance_30=None,
-                greeks=None,
-                footprint={}
+                timestamp=timestamp
             )
 
         state = self.states[instrument_key]
         state.timestamp = timestamp
 
-        # Update Greeks if present
+        # --- Update Greeks (cheap: only assign provided keys) ---
         greeks_data = tick.get("greeks")
         if greeks_data:
             if state.greeks is None:
-                state.greeks = Greeks.model_construct(
-                    delta=None, gamma=None, vega=None, theta=None, iv=None
-                )
-            for k, v in greeks_data.items():
-                if v is not None:
-                    setattr(state.greeks, k, v)
+                state.greeks = type(state).Config.model_construct_fields.get("greeks", None) if False else state.greeks
+                # Fallback: simple assignment to Pydantic Greeks object if present
+                try:
+                    from .models import Greeks
+                    if state.greeks is None:
+                        state.greeks = Greeks()
+                except Exception:
+                    state.greeks = None
+            if state.greeks is not None:
+                for k, v in greeks_data.items():
+                    if v is not None:
+                        setattr(state.greeks, k, v)
 
-        # Update Depth if present
+        # --- Update Depth if present, but avoid rebuilding unchanged depths ---
         depth = tick.get("market_depth")
         if depth:
-            if "bids" in depth:
-                state.depth.bids = [{"price": b["price"], "quantity": b["quantity"], "orders": b["orders"]} for b in depth["bids"][:30]]
+            bids = depth.get("bids", [])
+            asks = depth.get("asks", [])
+
+            bids_fp = self._depth_fingerprint(bids)
+            asks_fp = self._depth_fingerprint(asks)
+            last_bids_fp, last_asks_fp = raw.get("depth_fingerprint", ((), ()))
+
+            # Only rebuild Pydantic DepthLevel lists when fingerprint differs
+            if bids_fp != last_bids_fp:
+                # build up to depth_limit
+                limited_bids = bids[: self.depth_limit]
+                # reuse existing DepthLevel objects where possible based on price match
+                state.depth.bids = [
+                    DepthLevel.model_construct(
+                        price=b["price"],
+                        quantity=b["quantity"],
+                        orders=b.get("orders", 0)
+                    ) if isinstance(b, dict) else b
+                    for b in limited_bids
+                ]
                 if state.depth.bids:
-                    raw["best_bid"] = state.depth.bids[0]["price"]
-            if "asks" in depth:
-                state.depth.asks = [{"price": a["price"], "quantity": a["quantity"], "orders": a["orders"]} for a in depth["asks"][:30]]
+                    raw["best_bid"] = state.depth.bids[0].price
+            # if same, leave state.depth.bids unchanged
+
+            if asks_fp != last_asks_fp:
+                limited_asks = asks[: self.depth_limit]
+                state.depth.asks = [
+                    DepthLevel.model_construct(
+                        price=a["price"],
+                        quantity=a["quantity"],
+                        orders=a.get("orders", 0)
+                    ) if isinstance(a, dict) else a
+                    for a in limited_asks
+                ]
                 if state.depth.asks:
-                    raw["best_ask"] = state.depth.asks[0]["price"]
+                    raw["best_ask"] = state.depth.asks[0].price
 
-            state.spread, state.mid_price = calculate_spread_and_mid(raw["best_bid"], raw["best_ask"])
+            # store new fingerprints
+            raw["depth_fingerprint"] = (bids_fp, asks_fp)
 
-            # Update imbalances
-            state.depth_imbalance_1 = calculate_depth_imbalance(state.depth.bids, state.depth.asks, 1)
-            state.depth_imbalance_3 = calculate_depth_imbalance(state.depth.bids, state.depth.asks, 3)
-            state.depth_imbalance_5 = calculate_depth_imbalance(state.depth.bids, state.depth.asks, 5)
-            state.depth_imbalance_10 = calculate_depth_imbalance(state.depth.bids, state.depth.asks, 10)
-            state.depth_imbalance_20 = calculate_depth_imbalance(state.depth.bids, state.depth.asks, 20)
-            state.depth_imbalance_30 = calculate_depth_imbalance(state.depth.bids, state.depth.asks, 30)
+            # Always update spread/mid using the (possibly) updated bests
+            state.spread, state.mid_price = calculate_spread_and_mid(raw.get("best_bid"), raw.get("best_ask"))
 
-        # Process trade flow
+            # Only calculate imbalances for N where we have enough levels
+            # This avoids unnecessary work when depth is shallow
+            bids_len = len(state.depth.bids)
+            asks_len = len(state.depth.asks)
+            min_levels = min(bids_len, asks_len)
+
+            # Define requested imbalance depths in ascending order
+            imbalance_depths = [1, 3, 5, 10, 20, 30]
+            for n in imbalance_depths:
+                attr = f"depth_imbalance_{n}"
+                if min_levels >= n:
+                    # compute only when at least n levels available
+                    setattr(state, attr, calculate_depth_imbalance(state.depth.bids, state.depth.asks, n))
+                elif getattr(state, attr, None) is not None:
+                    setattr(state, attr, None)
+
+        # --- Process trade flow ---
         ltp = tick.get("ltp")
         ltq = tick.get("ltq")
         cumulative_volume = tick.get("volume")
 
         if cumulative_volume is not None:
-            raw["previous_cumulative_volume"] = raw["current_cumulative_volume"]
+            raw["previous_cumulative_volume"] = raw.get("current_cumulative_volume")
             raw["current_cumulative_volume"] = cumulative_volume
 
         if ltp is not None:
             # 1. Reconcile Trade Size
             trade_size, source, quality = calculate_trade_size(
                 ltq,
-                raw["current_cumulative_volume"],
-                raw["previous_cumulative_volume"]
+                raw.get("current_cumulative_volume"),
+                raw.get("previous_cumulative_volume")
             )
 
             state.trade_size = trade_size
@@ -126,13 +179,13 @@ class OrderFlowEngine:
                 # 2. Classify Direction
                 direction = classify_trade_direction(
                     ltp,
-                    raw["best_ask"],
-                    raw["best_bid"],
-                    raw["previous_trade_price"]
+                    raw.get("best_ask"),
+                    raw.get("best_bid"),
+                    raw.get("previous_trade_price")
                 )
 
-                if direction == "UNKNOWN" and raw["last_classification"] != "UNKNOWN":
-                    direction = raw["last_classification"]
+                if direction == "UNKNOWN" and raw.get("last_classification") != "UNKNOWN":
+                    direction = raw.get("last_classification")
 
                 raw["last_classification"] = direction
                 state.classification_mode = direction
@@ -142,16 +195,26 @@ class OrderFlowEngine:
                     state.buy_volume += trade_size
                     if ltp not in state.footprint:
                         state.footprint[ltp] = FootprintNode.model_construct(
-                            price=ltp, bid_volume=0, ask_volume=0, delta=0, total_volume=0,
-                            buy_imbalance=False, sell_imbalance=False
+                            price=ltp,
+                            bid_volume=0,
+                            ask_volume=0,
+                            delta=0,
+                            total_volume=0,
+                            buy_imbalance=False,
+                            sell_imbalance=False
                         )
                     state.footprint[ltp].ask_volume += trade_size
                 elif direction == "AGGRESSIVE_SELL":
                     state.sell_volume += trade_size
                     if ltp not in state.footprint:
                         state.footprint[ltp] = FootprintNode.model_construct(
-                            price=ltp, bid_volume=0, ask_volume=0, delta=0, total_volume=0,
-                            buy_imbalance=False, sell_imbalance=False
+                            price=ltp,
+                            bid_volume=0,
+                            ask_volume=0,
+                            delta=0,
+                            total_volume=0,
+                            buy_imbalance=False,
+                            sell_imbalance=False
                         )
                     state.footprint[ltp].bid_volume += trade_size
                 else:

@@ -91,7 +91,12 @@ class AsyncPersistenceWorker:
             execution_batch = []
             order_flow_batch = []
 
-            for event_type, event in batch:
+            for item in batch:
+                if isinstance(item, tuple):
+                    event_type, event = item
+                else:
+                    event_type, event = "generic", item
+
                 if event_type == "order_flow":
                     order_flow_batch.append((
                         event.get("instrument_key"),
@@ -105,10 +110,10 @@ class AsyncPersistenceWorker:
                         event.get("cvd"),
                         json.dumps(event)
                     ))
-                elif "decision" in event and "status" in event:
+                elif isinstance(event, dict) and "decision" in event and "status" in event:
                     decision = event["decision"]
                     risk_batch.append((decision.get("instrument"), decision.get("action"), event.get("status")))
-                elif "status" in event and "action" in event:
+                elif isinstance(event, dict) and "status" in event and "action" in event:
                     execution_batch.append((event.get("instrument"), event.get("action"), event.get("status")))
 
             if risk_batch:

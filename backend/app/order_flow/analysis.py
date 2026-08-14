@@ -49,14 +49,17 @@ def calculate_depth_imbalance(bids, asks, levels):
     bid_sum = 0
     ask_sum = 0
 
-    # Bids / asks are now dicts due to our optimization
     if bids:
         for i in range(min(levels, len(bids))):
-            bid_sum += bids[i]["quantity"]
+            b = bids[i]
+            qty = b.quantity if hasattr(b, "quantity") else b["quantity"]
+            bid_sum += qty
 
     if asks:
         for i in range(min(levels, len(asks))):
-            ask_sum += asks[i]["quantity"]
+            a = asks[i]
+            qty = a.quantity if hasattr(a, "quantity") else a["quantity"]
+            ask_sum += qty
 
     total = bid_sum + ask_sum
     if total == 0:

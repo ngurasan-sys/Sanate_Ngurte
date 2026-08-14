@@ -1,10 +1,10 @@
 import pytest
 from datetime import datetime
-from backend.app.oi.models import OIState, OITick
-from backend.app.strategies.oi.unusual_oi import UnusualOIStrategy
-from backend.app.strategies.oi.oi_support_resistance import OISupportResistanceStrategy
-from backend.app.strategies.oi.oi_breakout import OIBreakoutStrategy
-from backend.app.strategies.oi.oi_price_divergence import OIPriceDivergenceStrategy
+from app.oi.models import OIState, OITick
+from app.strategies.oi.unusual_oi import UnusualOIStrategy
+from app.strategies.oi.oi_support_resistance import OISupportResistanceStrategy
+from app.strategies.oi.oi_breakout import OIBreakoutStrategy
+from app.strategies.oi.oi_price_divergence import OIPriceDivergenceStrategy
 
 @pytest.fixture
 def base_state():

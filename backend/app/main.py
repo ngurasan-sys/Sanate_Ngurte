@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,32 +10,143 @@ from backend.app.api.websockets import router as websocket_router
 from backend.app.api.endpoints.order_flow import router as order_flow_router
 from backend.app.workers.persistence import persistence_worker
 
-import backend.app.engines.decision
-import backend.app.engines.risk
-import backend.app.engines.execution
-
-# Import to initialize order flow processor
+from backend.app.engines.decision import decision_engine
+from backend.app.engines.risk import risk_engine
+from backend.app.engines.execution import execution_engine
 from backend.app.order_flow.tick_processor import order_flow_processor
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# =============================================================
+# LOGGING
+# =============================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format=(
+        "%(asctime)s - %(name)s - "
+        "%(levelname)s - %(message)s"
+    ),
+)
+
 logger = logging.getLogger(__name__)
+
+
+# =============================================================
+# APPLICATION LIFECYCLE
+# =============================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start the event bus and persistence worker when the loop is running
-    event_bus.start()
-    order_flow_processor.start()
-    persistence_task = asyncio.create_task(persistence_worker.run())
-    logger.info("Application starting up, persistence worker started.")
-    yield
-    persistence_task.cancel()
-    try:
-        await persistence_task
-    except asyncio.CancelledError:
-        pass
-    logger.info("Application shutting down, persistence worker stopped.")
+    """
+    Application lifecycle.
 
-app = FastAPI(title="Algo Trading Workstation", lifespan=lifespan)
+    Starts the shared EventBus, downstream engines, order flow processor,
+    and persistence worker when the application starts.
+
+    Stops them cleanly during application shutdown.
+    """
+
+    logger.info(
+        "Starting Algo Trading Workstation..."
+    )
+
+    # ---------------------------------------------------------
+    # Event Bus
+    # ---------------------------------------------------------
+
+    event_bus.start()
+
+    # ---------------------------------------------------------
+    # Downstream Engines & Processors
+    # ---------------------------------------------------------
+
+    decision_engine.start()
+    risk_engine.start()
+    execution_engine.start()
+    order_flow_processor.start()
+
+    # ---------------------------------------------------------
+    # Persistence Worker
+    # ---------------------------------------------------------
+
+    persistence_task = asyncio.create_task(
+        persistence_worker.run()
+    )
+
+    logger.info(
+        "Application startup completed. "
+        "Event bus, engines, order flow processor and persistence worker "
+        "are running."
+    )
+
+    try:
+        yield
+
+    finally:
+        logger.info(
+            "Application shutting down..."
+        )
+
+        # -----------------------------------------------------
+        # Stop persistence worker
+        # -----------------------------------------------------
+
+        persistence_task.cancel()
+
+        try:
+            await persistence_task
+        except asyncio.CancelledError:
+            pass
+
+        # -----------------------------------------------------
+        # Stop downstream engines & processors
+        # -----------------------------------------------------
+
+        if hasattr(order_flow_processor, "stop"):
+            order_flow_processor.stop()
+
+        if hasattr(execution_engine, "stop"):
+            execution_engine.stop()
+
+        if hasattr(risk_engine, "stop"):
+            risk_engine.stop()
+
+        if hasattr(decision_engine, "stop"):
+            decision_engine.stop()
+
+        # -----------------------------------------------------
+        # Stop Event Bus
+        # -----------------------------------------------------
+
+        if hasattr(event_bus, "stop"):
+            result = event_bus.stop()
+
+            if asyncio.iscoroutine(result):
+                await result
+
+        logger.info(
+            "Application shutdown completed."
+        )
+
+
+# =============================================================
+# FASTAPI APPLICATION
+# =============================================================
+
+app = FastAPI(
+    title="Algo Trading Workstation",
+    version="1.0.0",
+    description=(
+        "Professional algorithmic trading "
+        "backend infrastructure."
+    ),
+    lifespan=lifespan,
+)
+
+
+# =============================================================
+# CORS
+# =============================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,9 +156,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(websocket_router)
-app.include_router(order_flow_router)
+
+# =============================================================
+# ROUTERS
+# =============================================================
+
+app.include_router(
+    websocket_router
+)
+
+app.include_router(
+    order_flow_router
+)
+
+
+# =============================================================
+# HEALTH
+# =============================================================
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+    }

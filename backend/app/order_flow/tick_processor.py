@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 class OrderFlowTickProcessor:
     def __init__(self):
         self.engine = OrderFlowEngine()
+        # store instrument_key -> OrderFlowState for coalesced broadcasts
         self.dirty_states: Dict[str, OrderFlowState] = {}
         self.broadcast_interval = 0.05  # 20Hz broadcast limit
         self._broadcast_task: Optional[asyncio.Task] = None
@@ -21,20 +22,39 @@ class OrderFlowTickProcessor:
         logger.info("OrderFlowTickProcessor started")
 
     async def on_market_tick(self, tick: Dict[str, Any]):
-        state = self.engine.process_tick(tick)
-        if state:
-            self.dirty_states[state.instrument_key] = state
+        # Hot path: extract only the primitives the engine needs and pass that reduced dict.
+        # This avoids repeated parsing or carrying large objects through the hot path.
+        mini_tick = {
+            "instrument_key": tick.get("instrument_key"),
+            "ltt": tick.get("ltt", tick.get("exchange_timestamp", 0)),
+            "ltp": tick.get("ltp"),
+            "ltq": tick.get("ltq"),
+            "volume": tick.get("volume"),
+            "market_depth": tick.get("market_depth"),
+            "greeks": None,
+        }
+        try:
+            state = self.engine.process_tick(mini_tick)
+            if state:
+                # store the state object for coalesced broadcast; this keeps topic isolation intact
+                self.dirty_states[state.instrument_key] = state
+        except Exception:
+            # keep hot path resilient; log error at debug level to avoid noise
+            logger.debug("Error processing market tick", exc_info=True)
 
     async def on_greeks_update(self, update: Dict[str, Any]):
-        # Inject Greeks into a synthetic tick for the engine
+        # Inject Greeks into a synthetic minimal tick for the engine
         tick = {
             "instrument_key": update.get("instrument_key"),
             "ltt": update.get("timestamp", 0),
             "greeks": update.get("greeks")
         }
-        state = self.engine.process_tick(tick)
-        if state:
-            self.dirty_states[state.instrument_key] = state
+        try:
+            state = self.engine.process_tick(tick)
+            if state:
+                self.dirty_states[state.instrument_key] = state
+        except Exception:
+            logger.debug("Error processing greeks update", exc_info=True)
 
     async def _broadcast_loop(self):
         """Coalesces state updates to avoid excessive Pydantic serializations."""
@@ -58,5 +78,6 @@ class OrderFlowTickProcessor:
                 break
             except Exception as e:
                 logger.error(f"Error in broadcast loop: {e}", exc_info=True)
+
 
 order_flow_processor = OrderFlowTickProcessor()

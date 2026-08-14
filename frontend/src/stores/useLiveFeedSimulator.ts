@@ -1,58 +1,218 @@
-import { useEffect } from 'react';
-import { useMarketStore } from './marketStore';
-import { useOptionStore } from './optionStore';
-import { usePortfolioStore } from './portfolioStore';
+import { useEffect, useRef } from 'react';
 import { useSystemStore } from './systemStore';
 
-// Hook to simulate a live Websocket data stream.
-// This executes updates periodically in a stable, incremental fashion.
+/**
+ * Cryptographically secure random number in [0, 1).
+ *
+ * Used only for frontend simulation of WebSocket latency.
+ * Market data must come from the backend WebSocket.
+ */
+function getSecureRandom(): number {
+  const array = new Uint32Array(1);
+  window.crypto.getRandomValues(array);
+  return array[0] / 0x100000000;
+}
+
+/**
+ * Live Sanate backend WebSocket feed.
+ *
+ * Backend is the source of truth for market/level data.
+ * This hook only manages the WebSocket connection and
+ * updates system connection state.
+ */
 export function useLiveFeedSimulator() {
-  const { indices, updateIndexPrice } = useMarketStore();
-  const { updateLtp } = useOptionStore();
-  const { positions, updatePositionPrice } = usePortfolioStore();
-  const { brokerageStatus, setWsLatency } = useSystemStore();
+  const { setWsLatency, setWsStatus } = useSystemStore();
+
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    if (brokerageStatus.wsStatus !== 'CONNECTED') return;
+    const wsUrl =
+      import.meta.env.VITE_WS_URL ||
+      'ws://localhost:8000/ws/levels';
 
-    const interval = setInterval(() => {
-      // 1. Randomize WebSocket latency slightly
-      const newLatency = Math.max(4, Math.min(45, brokerageStatus.wsLatency + (Math.random() > 0.5 ? 1 : -1) * Math.floor(Math.random() * 3)));
-      setWsLatency(newLatency);
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
 
-      // 2. Incremental updates for NIFTY & SENSEX spot prices
-      const nifty = indices.NIFTY;
-      const niftyChange = (Math.random() - 0.48) * 1.5; // slight bullish bias
-      const newNiftySpot = parseFloat((nifty.spot + niftyChange).toFixed(2));
-      const newNiftyDiff = parseFloat((nifty.change + niftyChange).toFixed(2));
-      const newNiftyPct = parseFloat(((newNiftyDiff / (24500 - nifty.change)) * 100).toFixed(2));
-      updateIndexPrice('NIFTY', newNiftySpot, newNiftyDiff, newNiftyPct);
+    const connect = () => {
+      if (disposed) {
+        return;
+      }
 
-      const sensex = indices.SENSEX;
-      const sensexChange = (Math.random() - 0.52) * 4.0; // slight bearish bias
-      const newSensexSpot = parseFloat((sensex.spot + sensexChange).toFixed(2));
-      const newSensexDiff = parseFloat((sensex.change + sensexChange).toFixed(2));
-      const newSensexPct = parseFloat(((newSensexDiff / (80240 - sensex.change)) * 100).toFixed(2));
-      updateIndexPrice('SENSEX', newSensexSpot, newSensexDiff, newSensexPct);
+      try {
+        console.log(`[Sanate] Connecting to WebSocket: ${wsUrl}`);
 
-      // 3. Option chain live update for NIFTY ATM (24500 CE/PE)
-      const cePriceDelta = (Math.random() - 0.45) * 0.40;
-      updateLtp('NIFTY', 24500, 'ce', parseFloat(Math.max(10, 112.50 + cePriceDelta).toFixed(2)));
+        setWsStatus('RECONNECTING');
 
-      const pePriceDelta = (Math.random() - 0.55) * 0.40;
-      updateLtp('NIFTY', 24500, 'pe', parseFloat(Math.max(10, 108.20 + pePriceDelta).toFixed(2)));
+        ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
 
-      // 4. Update Position P&L and LTP based on changes
-      positions.forEach((pos) => {
-        if (pos.status === 'ACTIVE') {
-          const ltpChange = (Math.random() - 0.47) * 0.25;
-          const updatedLtp = parseFloat(Math.max(5, pos.ltp + ltpChange).toFixed(2));
-          updatePositionPrice(pos.id, updatedLtp);
+        ws.onopen = () => {
+          if (disposed) {
+            return;
+          }
+
+          console.log('[Sanate] Backend WebSocket connected');
+
+          setWsStatus('CONNECTED');
+
+          // Reset the displayed latency when the connection opens.
+          setWsLatency(5);
+        };
+
+        ws.onmessage = (event: MessageEvent<string>) => {
+          if (disposed) {
+            return;
+          }
+
+          /*
+           * The backend is the source of truth.
+           *
+           * We do NOT generate NIFTY, SENSEX, option prices,
+           * positions, OI, levels, etc. here.
+           */
+
+          // Estimate/display WebSocket latency.
+          // This randomness is UI-only and is not market data.
+          const latency = Math.floor(getSecureRandom() * 20) + 5;
+
+          setWsLatency(latency);
+
+          try {
+            const data = JSON.parse(event.data);
+
+            console.debug('[Sanate] WebSocket event:', data);
+
+            /*
+             * Level events are currently logged here.
+             *
+             * A dedicated levelStore can consume these events
+             * when the frontend level-state integration is enabled.
+             */
+            if (data?.type === 'LEVEL_CREATED') {
+              console.log(
+                '[Sanate] New level received:',
+                data.data
+              );
+            }
+
+            if (data?.type === 'LEVEL_UPDATED') {
+              console.log(
+                '[Sanate] Level updated:',
+                data.data
+              );
+            }
+
+            if (data?.type === 'LEVEL_REMOVED') {
+              console.log(
+                '[Sanate] Level removed:',
+                data.data
+              );
+            }
+
+            /*
+             * Generic backend events.
+             *
+             * Keeping this generic allows future Sanate engines
+             * to publish events without requiring this hook to
+             * understand every event type.
+             */
+            if (data?.type) {
+              console.debug(
+                `[Sanate] Event type: ${data.type}`
+              );
+            }
+          } catch (error) {
+            console.error(
+              '[Sanate] WebSocket JSON parse error:',
+              error
+            );
+          }
+        };
+
+        ws.onerror = (error) => {
+          if (disposed) {
+            return;
+          }
+
+          console.error(
+            '[Sanate] WebSocket error:',
+            error
+          );
+
+          setWsStatus('DISCONNECTED');
+        };
+
+        ws.onclose = (event) => {
+          if (disposed) {
+            return;
+          }
+
+          console.warn(
+            `[Sanate] WebSocket disconnected. Code=${event.code}`
+          );
+
+          setWsStatus('DISCONNECTED');
+
+          wsRef.current = null;
+
+          /*
+           * Reconnect automatically.
+           *
+           * 2-second delay prevents a tight reconnect loop
+           * when the backend is unavailable.
+           */
+          reconnectTimer = setTimeout(() => {
+            if (!disposed) {
+              connect();
+            }
+          }, 2000);
+        };
+      } catch (error) {
+        console.error(
+          '[Sanate] Failed to create WebSocket:',
+          error
+        );
+
+        setWsStatus('DISCONNECTED');
+
+        reconnectTimer = setTimeout(() => {
+          if (!disposed) {
+            connect();
+          }
+        }, 2000);
+      }
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
+      if (ws) {
+        /*
+         * Remove handlers before closing so the intentional
+         * component cleanup does not trigger a reconnect.
+         */
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+
+        if (
+          ws.readyState === WebSocket.OPEN ||
+          ws.readyState === WebSocket.CONNECTING
+        ) {
+          ws.close();
         }
-      });
-    }, 1500); // stable interval to avoid rendering overwhelm
+      }
 
-    return () => clearInterval(interval);
-  }, [brokerageStatus.wsStatus, indices, positions, updateIndexPrice, updateLtp, updatePositionPrice, setWsLatency, brokerageStatus.wsLatency]);
+      wsRef.current = null;
+    };
+  }, [setWsLatency, setWsStatus]);
 }
-export default useLiveFeedSimulator;

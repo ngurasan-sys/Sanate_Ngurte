@@ -1,10 +1,10 @@
 import pytest
 from datetime import datetime
-from backend.app.oi.models import OIState, OITick
-from backend.app.strategies.oi.long_buildup import LongBuildupStrategy
-from backend.app.strategies.oi.short_buildup import ShortBuildupStrategy
-from backend.app.strategies.oi.long_unwinding import LongUnwindingStrategy
-from backend.app.strategies.oi.short_covering import ShortCoveringStrategy
+from app.oi.models import OIState, OITick
+from app.strategies.oi.long_buildup import LongBuildupStrategy
+from app.strategies.oi.short_buildup import ShortBuildupStrategy
+from app.strategies.oi.long_unwinding import LongUnwindingStrategy
+from app.strategies.oi.short_covering import ShortCoveringStrategy
 
 @pytest.fixture
 def base_state():

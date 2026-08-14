@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime
-from backend.app.oi.engine import OIEngine
-from backend.app.oi.models import OITick
+from app.oi.engine import OIEngine
+from app.oi.models import OITick
 
 def test_engine_initialization():
     engine = OIEngine()

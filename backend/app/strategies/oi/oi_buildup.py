@@ -1,7 +1,7 @@
 from typing import Optional
 from .base import BaseOIStrategy
-from backend.app.oi.models import OIState, OITick, OIStrategyOutput
-from backend.app.oi.analysis import classify_buildup
+from app.oi.models import OIState, OITick, OIStrategyOutput
+from app.oi.analysis import classify_buildup
 
 class OIBuildupStrategy(BaseOIStrategy):
     """
