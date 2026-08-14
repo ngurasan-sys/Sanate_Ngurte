@@ -16,8 +16,10 @@ export type NavigationPage =
   | 'QUANT'
   | 'STRATEGY_MONITOR'
   | 'GAP_OPENING_STRATEGIES'
+  | 'THREE_MINUTE_GAP'
   | 'LIVE_SIGNALS'
   | 'BACKTEST'
+  | 'PULLBACK_CHOP_FILTER'
   | 'DECISION_INTEL'
   | 'POSITIONS'
   | 'ORDERS'
@@ -26,7 +28,12 @@ export type NavigationPage =
   | 'UPSTOX'
   | 'SYSTEM_HEALTH'
   | 'DATA_FEED'
-  | 'TRENDING_OI_PA';
+  | 'TRENDING_OI_PA'
+  | 'TRENDING_OI_CROSSOVER';
+  | 'STRADDLE';
+  | 'INTRADAY_TREND_SCALPER';
+  | 'MARKET_BREADTH';
+  | 'TWO_CANDLE';
 
 interface UIState {
   sidebarExpanded: boolean;
