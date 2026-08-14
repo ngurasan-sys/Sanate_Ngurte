@@ -16,7 +16,11 @@ from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
 from backend.app.engines.execution import execution_engine
 from backend.app.order_flow.tick_processor import order_flow_processor
+from backend.app.strategies.trending_oi_engine import trending_oi_engine
+from backend.app.market_data.upstox_v3 import UpstoxV3Client
 
+# Mock or global instance
+upstox_client = UpstoxV3Client()
 
 # =============================================================
 # LOGGING
@@ -66,6 +70,10 @@ async def lifespan(app: FastAPI):
     risk_engine.start()
     execution_engine.start()
     order_flow_processor.start()
+    trending_oi_engine.start()
+
+    # Start Upstox stream
+    asyncio.create_task(upstox_client.connect())
 
     # ---------------------------------------------------------
     # Persistence Worker (lazy import)
@@ -115,6 +123,12 @@ async def lifespan(app: FastAPI):
 
         if hasattr(decision_engine, "stop"):
             decision_engine.stop()
+
+        if hasattr(trending_oi_engine, "stop"):
+            trending_oi_engine.stop()
+
+        if hasattr(upstox_client, "close"):
+            await upstox_client.close()
 
         # -----------------------------------------------------
         # Stop Event Bus

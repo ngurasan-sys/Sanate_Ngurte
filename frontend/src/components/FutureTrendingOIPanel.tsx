@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useOptionStore } from '../stores/optionStore';
 import FoldableDataTable from './FoldableDataTable';
 import type { Column } from './FoldableDataTable';
@@ -6,9 +6,13 @@ import StatusBadge from './StatusBadge';
 import type { FutureTrendingOIItem } from '../mock/interfaces';
 
 export const FutureTrendingOIPanel: React.FC = () => {
-  const { futureTrendingOI } = useOptionStore();
+  const { futureTrendingOI, startWsLiveFeed, wsConnected } = useOptionStore();
   const currentSymbol = 'NIFTY'; // can parameterize
   const data = futureTrendingOI[currentSymbol] || [];
+
+  useEffect(() => {
+    startWsLiveFeed();
+  }, [startWsLiveFeed]);
 
   const columns: Column<FutureTrendingOIItem>[] = [
     {
@@ -85,19 +89,30 @@ export const FutureTrendingOIPanel: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-zinc-100 font-sans font-bold text-base tracking-wider uppercase">
-          Future Trending Open Interest (OI)
-        </h3>
-        <p className="text-xs text-zinc-400 font-sans mt-0.5">Real-time dynamic future basis and OI builder classifications</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-zinc-100 font-sans font-bold text-base tracking-wider uppercase">
+            Future Trending Open Interest (OI)
+          </h3>
+          <p className="text-xs text-zinc-400 font-sans mt-0.5">Real-time dynamic future basis and OI builder classifications</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs font-mono">
+          Status: <span className={wsConnected ? "text-emerald-400" : "text-rose-400"}>{wsConnected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+        </div>
       </div>
 
-      <FoldableDataTable
-        data={data}
-        columns={columns}
-        rowKey={(item) => item.time}
-        renderExpanded={renderExpanded}
-      />
+      {data.length === 0 ? (
+        <div className="py-12 text-center text-zinc-500 font-mono text-sm border border-dashed border-zinc-800 rounded-lg">
+          NO DATA
+        </div>
+      ) : (
+        <FoldableDataTable
+          data={data}
+          columns={columns}
+          rowKey={(item) => item.time}
+          renderExpanded={renderExpanded}
+        />
+      )}
     </div>
   );
 };
