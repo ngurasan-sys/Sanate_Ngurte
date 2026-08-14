@@ -16,6 +16,7 @@ import GreeksPanel from './components/GreeksPanel';
 import LevelPanel from './components/LevelPanel';
 import StrategyPanel from './components/StrategyPanel';
 import GapOpeningStrategyPanel from './components/GapOpeningStrategyPanel';
+import ThreeMinuteGapPanel from './components/ThreeMinuteGapPanel';
 import DecisionPanel from './components/DecisionPanel';
 import DetailDrawer from './components/DetailDrawer';
 import RiskPanel from './components/RiskPanel';
@@ -27,6 +28,11 @@ import InteractiveChartView from './views/InteractiveChartView';
 import AlgoDashboardView from './views/AlgoDashboardView';
 import { TrendingOIPAView } from './views/TrendingOIPAView';
 import { TrendingOiCrossover } from './views/TrendingOiCrossover';
+import { StraddleMonitorView } from './views/StraddleMonitorView';
+import { IntradayTrendScalperView } from './views/IntradayTrendScalperView';
+import { PullbackChopFilterView } from './views/PullbackChopFilterView';
+import MarketBreadthPage from './components/breadth/MarketBreadthPage';
+import { TwoCandleView } from './views/TwoCandleView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -101,6 +107,15 @@ export const App: React.FC = () => {
 
       case 'TRENDING_OI_CROSSOVER':
         return <TrendingOiCrossover />;
+      case 'STRADDLE':
+        return <StraddleMonitorView />;
+      case 'INTRADAY_TREND_SCALPER':
+        return <IntradayTrendScalperView />;
+      case 'PULLBACK_CHOP_FILTER':
+        return <PullbackChopFilterView />;
+
+      case 'TWO_CANDLE':
+        return <TwoCandleView />;
 
       case 'DASHBOARD':
         return (
@@ -214,6 +229,9 @@ export const App: React.FC = () => {
 
       case 'INTERACTIVE_CHART':
         return <InteractiveChartView />;
+
+      case 'MARKET_BREADTH':
+        return <MarketBreadthPage />;
 
       case 'SPOT_OI':
         return <OIPanel />;
@@ -333,7 +351,8 @@ export const App: React.FC = () => {
 
       case 'GAP_OPENING_STRATEGIES':
         return <GapOpeningStrategyPanel />;
-
+      case 'THREE_MINUTE_GAP':
+        return <ThreeMinuteGapPanel />;
       case 'LIVE_SIGNALS':
         return (
           <div className="space-y-6 select-none">
