@@ -26,6 +26,7 @@ import EmptyState from './components/EmptyState';
 import InteractiveChartView from './views/InteractiveChartView';
 import AlgoDashboardView from './views/AlgoDashboardView';
 import { TrendingOIPAView } from './views/TrendingOIPAView';
+import { PullbackChopFilterView } from './views/PullbackChopFilterView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -97,6 +98,9 @@ export const App: React.FC = () => {
 
       case 'TRENDING_OI_PA':
         return <TrendingOIPAView />;
+
+      case 'PULLBACK_CHOP_FILTER':
+        return <PullbackChopFilterView />;
 
       case 'DASHBOARD':
         return (
