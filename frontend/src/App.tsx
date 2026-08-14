@@ -27,6 +27,7 @@ import EmptyState from './components/EmptyState';
 import InteractiveChartView from './views/InteractiveChartView';
 import AlgoDashboardView from './views/AlgoDashboardView';
 import { TrendingOIPAView } from './views/TrendingOIPAView';
+import { StraddleMonitorView } from './views/StraddleMonitorView';
 import { IntradayTrendScalperView } from './views/IntradayTrendScalperView';
 import { PullbackChopFilterView } from './views/PullbackChopFilterView';
 import MarketBreadthPage from './components/breadth/MarketBreadthPage';
@@ -103,6 +104,8 @@ export const App: React.FC = () => {
       case 'TRENDING_OI_PA':
         return <TrendingOIPAView />;
 
+      case 'STRADDLE':
+        return <StraddleMonitorView />;
       case 'INTRADAY_TREND_SCALPER':
         return <IntradayTrendScalperView />;
       case 'PULLBACK_CHOP_FILTER':
