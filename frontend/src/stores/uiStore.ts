@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 export type NavigationPage =
   | 'DASHBOARD'
+  | 'ALGO_DASHBOARD'
   | 'MARKET_NIFTY'
   | 'MARKET_SENSEX'
   | 'INTERACTIVE_CHART'

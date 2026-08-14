@@ -139,10 +139,12 @@ class EventBus:
             worker.cancel()
 
         if self._workers:
-            await asyncio.gather(
-                *self._workers,
-                return_exceptions=True,
-            )
+            active_workers = [w for w in self._workers if not w.done()]
+            if active_workers:
+                await asyncio.gather(
+                    *active_workers,
+                    return_exceptions=True,
+                )
 
         self._workers.clear()
         self._subscriber_queues.clear()

@@ -23,6 +23,7 @@ import OrderPanel from './components/OrderPanel';
 import BrokeragePanel from './components/BrokeragePanel';
 import EmptyState from './components/EmptyState';
 import InteractiveChartView from './views/InteractiveChartView';
+import AlgoDashboardView from './views/AlgoDashboardView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -89,6 +90,9 @@ export const App: React.FC = () => {
   // Render Router based on Active Page State
   const renderPageContent = () => {
     switch (activePage) {
+      case 'ALGO_DASHBOARD':
+        return <AlgoDashboardView />;
+
       case 'DASHBOARD':
         return (
           <div className="space-y-8 select-none">

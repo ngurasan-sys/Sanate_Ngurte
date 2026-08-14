@@ -39,6 +39,7 @@ export const Sidebar: React.FC = () => {
       section: 'CORE',
       items: [
         { label: 'DASHBOARD', icon: LayoutDashboard, page: 'DASHBOARD' },
+        { label: 'ALGO DASHBOARD', icon: Activity, page: 'ALGO_DASHBOARD' },
       ],
     },
     {

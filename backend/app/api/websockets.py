@@ -22,7 +22,8 @@ class ConnectionManager:
             "risk": {},
             "execution": {},
             "order_flow": {},
-            "levels": {}
+            "levels": {},
+            "algo": {}
         }
 
         # Subscribe to events from the event bus and forward to websocket
@@ -34,6 +35,13 @@ class ConnectionManager:
         event_bus.subscribe("decision_created", lambda e: self.broadcast("decisions", e))
         event_bus.subscribe("risk_passed", lambda e: self.broadcast("risk", e))
         event_bus.subscribe("risk_failed", lambda e: self.broadcast("risk", e))
+        # Algo dashboard events
+        event_bus.subscribe("ALGO_STATUS", lambda e: self.broadcast("algo", e))
+        event_bus.subscribe("STRATEGY_STATUS", lambda e: self.broadcast("algo", e))
+        event_bus.subscribe("SIGNAL_CREATED", lambda e: self.broadcast("algo", e))
+        event_bus.subscribe("DECISION_CREATED", lambda e: self.broadcast("algo", e))
+        event_bus.subscribe("RISK_DECISION", lambda e: self.broadcast("algo", e))
+        event_bus.subscribe("EXECUTION_UPDATE", lambda e: self.broadcast("algo", e))
 
     def _publish_model_or_dict(self, channel: str, payload):
         try:

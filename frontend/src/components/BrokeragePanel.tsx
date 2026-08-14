@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEffect } from 'react';
 import { useSystemStore } from '../stores/systemStore';
 import StatusBadge from './StatusBadge';
 import { Link2, ShieldCheck, Lock } from 'lucide-react';
@@ -6,13 +7,47 @@ import { Link2, ShieldCheck, Lock } from 'lucide-react';
 export const BrokeragePanel: React.FC = () => {
   const { brokerageStatus, connectBroker, disconnectBroker } = useSystemStore();
 
+
   const handleToggle = () => {
     if (brokerageStatus.isConnected) {
       disconnectBroker();
     } else {
-      connectBroker();
+      // Open Upstox OAuth login in a new tab/window
+      const width = 600;
+      const height = 700;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+
+      window.open(
+        (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api/v1/broker/upstox/login',
+        'Upstox Login',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
     }
   };
+
+    useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Securely check origin
+      const expectedOrigin = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+      // Strict origin matching
+      if (event.origin !== expectedOrigin && expectedOrigin.startsWith('http')) {
+        console.warn('Broker Auth: Received message from unauthorized origin:', event.origin);
+        return;
+      }
+
+      if (event.data?.type === 'BROKER_AUTH_COMPLETE' && event.data?.broker === 'UPSTOX') {
+        if (event.data.status === 'CONNECTED') {
+          connectBroker();
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [connectBroker]);
+
 
   return (
     <div className="space-y-6">

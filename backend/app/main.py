@@ -9,6 +9,8 @@ from backend.app.core.event_bus import event_bus
 from backend.app.api.websockets import router as websocket_router
 from backend.app.api.endpoints.order_flow import router as order_flow_router
 from backend.app.api.endpoints.levels import router as levels_router
+from backend.app.api.endpoints.broker import router as broker_router
+from backend.app.api.endpoints.algo import router as algo_router
 
 from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
@@ -172,6 +174,16 @@ app.include_router(
 app.include_router(
     levels_router
 )
+
+app.include_router(
+    broker_router
+)
+
+app.include_router(
+    algo_router
+)
+
+
 
 
 # =============================================================

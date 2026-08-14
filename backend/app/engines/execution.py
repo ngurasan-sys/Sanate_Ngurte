@@ -42,21 +42,30 @@ class ExecutionEngine:
         broker execution confirmation is received.
         """
 
+        mode = req_data.get("execution_mode", "DATA_ONLY")
+
         instrument = req_data.get("instrument")
         decision_id = req_data.get("decision_id")
         action = req_data.get("action")
 
         logger.info(
-            "Execution request received for %s",
-            instrument,
+            "Execution request received for %s (Mode: %s)",
+            instrument, mode
         )
+
+        status = "SUBMITTED"
+        if mode == "DATA_ONLY":
+            status = "DATA_ONLY"
+        elif mode == "PAPER":
+            status = "PAPER_SUBMITTED"
 
         result = {
             "instrument": instrument,
-            "status": "SUBMITTED",
+            "status": status,
             "action": action,
             "timestamp": datetime.now(),
             "decision_id": decision_id,
+            "mode": mode,
         }
 
         await event_bus.publish(
