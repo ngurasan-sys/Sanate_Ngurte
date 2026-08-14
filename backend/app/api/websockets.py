@@ -24,7 +24,8 @@ class ConnectionManager:
             "order_flow": {},
             "levels": {},
             "algo": {},
-            "trending_oi": {}
+            "trending_oi": {},
+            "straddle": {}
         }
 
         # Subscribe to events from the event bus and forward to websocket
@@ -44,6 +45,7 @@ class ConnectionManager:
         event_bus.subscribe("RISK_DECISION", lambda e: self.broadcast("algo", e))
         event_bus.subscribe("EXECUTION_UPDATE", lambda e: self.broadcast("algo", e))
         event_bus.subscribe("trending_oi", lambda e: self.broadcast("trending_oi", e))
+        event_bus.subscribe("straddle", lambda e: self.broadcast("straddle", e))
 
     def _publish_model_or_dict(self, channel: str, payload):
         try:
