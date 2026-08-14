@@ -79,6 +79,7 @@ export const Sidebar: React.FC = () => {
         { label: 'Live Signals', icon: Sparkles, page: 'LIVE_SIGNALS' },
         { label: 'Backtest', icon: FileText, page: 'BACKTEST' },
         { label: 'Trending OI + Price Action', icon: Flame, page: 'TRENDING_OI_PA' },
+        { label: 'Intraday Trend Scalper', icon: GitBranch, page: 'INTRADAY_TREND_SCALPER' },
         { label: 'Pullback Chop Filter', icon: Activity, page: 'PULLBACK_CHOP_FILTER' },
         { label: '2 Candle Scalper', icon: Crosshair, page: 'TWO_CANDLE' },
       ],
