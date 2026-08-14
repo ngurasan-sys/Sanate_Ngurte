@@ -18,6 +18,7 @@ export type NavigationPage =
   | 'GAP_OPENING_STRATEGIES'
   | 'LIVE_SIGNALS'
   | 'BACKTEST'
+  | 'PULLBACK_CHOP_FILTER'
   | 'DECISION_INTEL'
   | 'POSITIONS'
   | 'ORDERS'
