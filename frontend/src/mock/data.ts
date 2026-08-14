@@ -155,6 +155,19 @@ export const mockFutureTrendingOI: Record<'NIFTY' | 'SENSEX', FutureTrendingOIIt
 
 export const mockStrategies: Strategy[] = [
   {
+    id: 'oh_ol',
+    name: 'O=H O=L',
+    status: 'ACTIVE',
+    signal: 'HOLD',
+    confidence: 0,
+    pnl: 0.00,
+    parameters: { tolerance: 0.0005, supertrendPeriod: 10, supertrendMultiplier: 3, minimumOptionStrikes: 3, oiRatioThreshold: 1.8 },
+    indicators: {},
+    levels: { support: [], resistance: [] },
+    oi: 'Neutral',
+    historicalStats: { winRate: 0, totalTrades: 0 }
+  },
+  {
     id: 'gap_opening_strategies',
     name: 'Gap Opening Strategies',
     status: 'ACTIVE',
