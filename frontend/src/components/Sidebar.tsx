@@ -74,6 +74,7 @@ export const Sidebar: React.FC = () => {
         { label: 'Strategy Monitor', icon: BookOpen, page: 'STRATEGY_MONITOR' },
         { label: 'Live Signals', icon: Sparkles, page: 'LIVE_SIGNALS' },
         { label: 'Backtest', icon: FileText, page: 'BACKTEST' },
+        { label: 'Trending OI + Price Action', icon: Flame, page: 'TRENDING_OI_PA' },
       ],
     },
     {
