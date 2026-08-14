@@ -48,7 +48,7 @@ export const StrategyPanel: React.FC = () => {
             {Object.entries(item.parameters).map(([k, v]) => (
               <div key={k} className="flex justify-between">
                 <span className="text-zinc-500">{k}:</span>
-                <span>{v.toString()}</span>
+                <span>{String(v)}</span>
               </div>
             ))}
           </div>
