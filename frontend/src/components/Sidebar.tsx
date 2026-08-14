@@ -18,7 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  Link2
+  Link2,
+  Crosshair
 } from 'lucide-react';
 
 interface SidebarItemProps {
@@ -73,11 +74,13 @@ export const Sidebar: React.FC = () => {
       section: 'STRATEGIES',
       items: [
         { label: 'Gap Opening Strategies', icon: BookOpen, page: 'GAP_OPENING_STRATEGIES' },
+        { label: '3 Minute Gap', icon: BookOpen, page: 'THREE_MINUTE_GAP' },
         { label: 'Strategy Monitor', icon: BookOpen, page: 'STRATEGY_MONITOR' },
         { label: 'Live Signals', icon: Sparkles, page: 'LIVE_SIGNALS' },
         { label: 'Backtest', icon: FileText, page: 'BACKTEST' },
         { label: 'Trending OI + Price Action', icon: Flame, page: 'TRENDING_OI_PA' },
         { label: 'Pullback Chop Filter', icon: Activity, page: 'PULLBACK_CHOP_FILTER' },
+        { label: '2 Candle Scalper', icon: Crosshair, page: 'TWO_CANDLE' },
       ],
     },
     {

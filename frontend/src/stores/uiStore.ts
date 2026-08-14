@@ -16,6 +16,7 @@ export type NavigationPage =
   | 'QUANT'
   | 'STRATEGY_MONITOR'
   | 'GAP_OPENING_STRATEGIES'
+  | 'THREE_MINUTE_GAP'
   | 'LIVE_SIGNALS'
   | 'BACKTEST'
   | 'PULLBACK_CHOP_FILTER'
@@ -29,6 +30,7 @@ export type NavigationPage =
   | 'DATA_FEED'
   | 'TRENDING_OI_PA'
   | 'MARKET_BREADTH';
+  | 'TWO_CANDLE';
 
 interface UIState {
   sidebarExpanded: boolean;
