@@ -6,6 +6,7 @@
 venv/
 env/
 ENV/
+backend/venv/
 
 
 # ============================================================
@@ -24,7 +25,6 @@ __pycache__/
 
 build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
