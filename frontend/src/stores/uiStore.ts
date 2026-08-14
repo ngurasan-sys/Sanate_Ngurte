@@ -16,6 +16,7 @@ export type NavigationPage =
   | 'QUANT'
   | 'STRATEGY_MONITOR'
   | 'GAP_OPENING_STRATEGIES'
+  | 'THREE_MINUTE_GAP'
   | 'LIVE_SIGNALS'
   | 'BACKTEST'
   | 'DECISION_INTEL'
