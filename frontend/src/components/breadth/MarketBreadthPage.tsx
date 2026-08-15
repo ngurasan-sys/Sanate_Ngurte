@@ -9,7 +9,6 @@ interface MarketBreadthData {
     adv: number;
     dec: number;
   };
-  heavyweight_sync?: Record<string, { status: string; oi_chg: string }>;
   macro_trend?: {
     status: string;
     last_3_days: string[];
@@ -101,38 +100,6 @@ export const MarketBreadthPage: React.FC = () => {
          <div className="text-2xl font-sans text-zinc-300 font-bold tracking-wide">
            <span className="text-emerald-400">Adv: {data.advance_decline?.adv ?? '-'}</span> <span className="mx-3 text-zinc-600">|</span> <span className="text-rose-400">Dec: {data.advance_decline?.dec ?? '-'}</span>
          </div>
-      </div>
-
-      {/* Component 3: Heavyweight Sync Tracker */}
-      <div className="bg-[#1e293b] rounded-2xl p-8 border border-zinc-800 shadow-xl">
-         <h3 className="text-zinc-400 font-sans font-bold text-sm uppercase tracking-widest mb-6">Heavyweight Sync Monitor (60m)</h3>
-
-         {(() => {
-            const heavyweight_sync = data.heavyweight_sync;
-            const hdfc = heavyweight_sync?.['HDFCBANK'];
-            const icici = heavyweight_sync?.['ICICIBANK'];
-            const inSync = hdfc && icici && hdfc.status === icici.status && hdfc.status.includes('BUILDUP');
-            const syncClass = inSync ? 'ring-1 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : '';
-
-            return (
-              <div className={`flex flex-row justify-between items-center gap-4 bg-[#0f172a] rounded-xl p-6 ${syncClass}`}>
-                {heavyweight_sync && Object.entries(heavyweight_sync).map(([ticker, info]) => {
-                  const isBull = info.status.includes('LONG') || info.status.includes('COVERING');
-                  const textColor = isBull ? 'text-emerald-400' : 'text-rose-400';
-
-                  return (
-                    <div key={ticker} className="flex flex-col items-center">
-                      <span className="font-bold text-zinc-200 tracking-wider mb-1">{ticker}</span>
-                      <span className={`text-xs font-mono font-medium ${textColor}`}>
-                        {info.status.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                  );
-                })}
-                {!heavyweight_sync && <div className="text-zinc-500 mx-auto">Waiting for sync data...</div>}
-              </div>
-            );
-         })()}
       </div>
     </div>
   );

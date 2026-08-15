@@ -73,10 +73,11 @@ class MarketBreadthEngine:
     async def _worker(self):
         while self.running:
             try:
-                # No live per-stock OI/breadth data source is wired up yet
-                # (this would need real 60-minute OI history for the Bank
-                # Nifty heavyweights and real EOD CAS close/OI data). Report
-                # that honestly instead of publishing fabricated numbers.
+                # No live breadth data source is wired up yet (this would
+                # need real EOD CAS close/OI data). Report that honestly
+                # instead of publishing fabricated numbers. Note: this
+                # deliberately does not track individual-stock OI — no
+                # stock futures are used anywhere in this project.
                 payload = {
                     "index": "BANKNIFTY",
                     "sufficient_data": False,
