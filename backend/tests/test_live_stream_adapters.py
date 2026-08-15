@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from backend.app.api.live_stream_adapters import (
     adapt_oh_ol,
     adapt_trending_oi_price_action,
+    sanitize_payload,
 )
 from backend.app.strategies.oh_ol.oh_ol_strategy import OhOlStrategy, TargetState
 
@@ -52,12 +53,38 @@ def test_adapt_trending_oi_price_action_blocked_state():
 
     risk_status, payload = adapt_trending_oi_price_action(state)
 
-    assert risk_status[0] == {
-        "name": "TIME_FILTER",
-        "passed": False,
-        "rejection_reason": "REJECTED: Post 2:30 PM Premium Decay Risk",
-    }
+    assert risk_status[0]["name"] == "TIME_FILTER"
+    assert risk_status[0]["passed"] is False
+    # The reason is the adapter's own pillar-specific text, not the engine's
+    # single shared rejection_reason field.
+    assert risk_status[0]["rejection_reason"] == "Outside valid trading time window"
     assert risk_status[1]["passed"] is True
+    assert risk_status[1]["rejection_reason"] is None
+
+
+def test_adapt_trending_oi_price_action_dual_failure_reasons_are_pillar_specific():
+    # Engine reality: once the time filter blocks, trade_valid is False, so the
+    # distance-filter branch sets distance_filter_status="BLOCKED" but does NOT
+    # overwrite the shared rejection_reason. Reusing that field would attribute
+    # the time filter's reason to the distance pillar.
+    state = {
+        "time_filter_status": "BLOCKED",
+        "distance_filter_status": "BLOCKED",
+        "rejection_reason": "REJECTED: Post 2:30 PM Premium Decay Risk",
+        "position_state": "TRADE_BLOCKED",
+        "trade_valid": False,
+    }
+
+    risk_status, _ = adapt_trending_oi_price_action(state)
+
+    time_pillar, distance_pillar = risk_status[0], risk_status[1]
+    assert time_pillar["name"] == "TIME_FILTER"
+    assert distance_pillar["name"] == "DISTANCE_FILTER"
+    assert time_pillar["passed"] is False
+    assert distance_pillar["passed"] is False
+    assert time_pillar["rejection_reason"] != distance_pillar["rejection_reason"]
+    assert "time" in time_pillar["rejection_reason"].lower()
+    assert "distance" in distance_pillar["rejection_reason"].lower()
 
 
 def test_adapt_oh_ol_no_active_target():
@@ -163,6 +190,21 @@ def test_adapt_trending_oi_price_action_sanitizes_inf_defaults():
     assert "Infinity" not in serialized
     assert json.loads(serialized)["current_day_high"] is None
     assert json.loads(serialized)["current_day_low"] is None
+
+
+def test_sanitize_payload_recurses_through_nested_structures():
+    payload = {
+        "top": float("-inf"),
+        "nested": {"a": float("inf"), "b": float("nan"), "ok": 1.5},
+        "items": [float("inf"), {"deep": float("-inf")}, "text"],
+    }
+
+    cleaned = sanitize_payload(payload)
+
+    assert cleaned["top"] is None
+    assert cleaned["nested"] == {"a": None, "b": None, "ok": 1.5}
+    assert cleaned["items"] == [None, {"deep": None}, "text"]
+    json.dumps(cleaned, allow_nan=False)
 
 
 def test_adapt_oh_ol_ignores_consumed_or_inactive_targets():
