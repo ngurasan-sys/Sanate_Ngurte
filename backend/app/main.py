@@ -19,6 +19,7 @@ from backend.app.api.endpoints.order_flow import router as order_flow_router
 from backend.app.api.endpoints.levels import router as levels_router
 from backend.app.api.endpoints.broker import router as broker_router
 from backend.app.api.endpoints.algo import router as algo_router
+from backend.app.api.endpoints.live_stream import router as live_stream_router
 
 from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
@@ -218,6 +219,10 @@ app.add_middleware(
 # =============================================================
 # ROUTERS
 # =============================================================
+
+app.include_router(
+    live_stream_router
+)
 
 app.include_router(
     websocket_router
