@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional
 from datetime import datetime
-from app.core.event_bus import event_bus
+from backend.app.core.event_bus import event_bus
 from enum import Enum
 
 class GapDirection(Enum):

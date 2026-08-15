@@ -4,11 +4,11 @@ from enum import Enum
 from pydantic import BaseModel
 import logging
 
-from app.core.event_bus import event_bus
-from app.market_data.models import Tick, Candle
-from app.oi.models import OITick
-from app.core.indicators import Supertrend
-from app.strategies.trending_oi_price_action.indicators import DailyATR
+from backend.app.core.event_bus import event_bus
+from backend.app.market_data.models import Tick, Candle
+from backend.app.oi.models import OITick
+from backend.app.core.indicators import Supertrend
+from backend.app.strategies.trending_oi_price_action.indicators import DailyATR
 
 logger = logging.getLogger(__name__)
 

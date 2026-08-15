@@ -3,8 +3,8 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import pytz
 
-from app.core.event_bus import event_bus
-from app.market_data.models import Tick, Candle
+from backend.app.core.event_bus import event_bus
+from backend.app.market_data.models import Tick, Candle
 from .models import StrategyConfig, PositionState, StrategySignal
 from .indicators import IndicatorEngine
 from .strike_selection import StrikeSelectionService

@@ -25,7 +25,7 @@ class ConnectionManager:
             "levels": {},
             "algo": {},
             "trending_oi": {},
-            "straddle": {}
+            "straddle": {},
             "pullback_chop": {},
             "market_breadth": {}
         }

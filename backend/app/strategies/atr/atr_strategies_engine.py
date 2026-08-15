@@ -4,9 +4,9 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import pytz
 
-from app.core.event_bus import event_bus
-from app.market_data.models import Tick, Candle
-from app.oi.models import OITick
+from backend.app.core.event_bus import event_bus
+from backend.app.market_data.models import Tick, Candle
+from backend.app.oi.models import OITick
 
 logger = logging.getLogger(__name__)
 

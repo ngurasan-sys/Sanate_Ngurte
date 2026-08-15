@@ -1,7 +1,7 @@
 from typing import Optional
 import numpy as np
 from .base import BaseOIStrategy
-from app.oi.models import OIState, OITick, OIStrategyOutput
+from backend.app.oi.models import OIState, OITick, OIStrategyOutput
 
 class UnusualOIStrategy(BaseOIStrategy):
     """
