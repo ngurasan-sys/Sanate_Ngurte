@@ -35,6 +35,7 @@ import MarketBreadthPage from './components/breadth/MarketBreadthPage';
 import { TwoCandleView } from './views/TwoCandleView';
 import { ExpiryReversalView } from './views/ExpiryReversalView';
 import { ExpiryTracker } from './components/expiry/ExpiryTracker';
+import { ExecutionControlView } from './views/ExecutionControlView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -124,6 +125,9 @@ export const App: React.FC = () => {
 
       case 'EXPIRY_TRACKER':
         return <ExpiryTracker />;
+
+      case 'EXECUTION_CONTROL':
+        return <ExecutionControlView />;
 
       case 'DASHBOARD':
         return (

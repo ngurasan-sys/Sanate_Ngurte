@@ -14,9 +14,16 @@ of the kind:
                       sandbox token. No real money, no real position.
   LIVE                Sends to the real HFT host with the real token.
                       REAL MONEY MOVES. Requires UPSTOX_EXECUTION_MODE
-                      to be set to exactly "LIVE" *and* a separate
-                      confirmation flag, so a single stray env var
-                      cannot arm live trading by itself.
+                      to be set to exactly "LIVE" *and* a second,
+                      independent confirmation: either
+                      UPSTOX_LIVE_TRADING_CONFIRMED=YES in the
+                      environment, or the runtime arm switch toggled
+                      from the frontend's execution-control panel
+                      (backend.app.execution.runtime_state). The
+                      runtime switch always resets to disarmed on
+                      process restart. Either switch alone is not
+                      enough — a single stray env var or a forgotten
+                      UI toggle cannot arm live trading by itself.
 
 An order is only ever reported as SUBMITTED when the broker actually
 returned an order_id. Every other outcome reports what really happened.
@@ -31,6 +38,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from backend.app.core import upstox_auth
+from backend.app.execution.runtime_state import execution_runtime_state
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +102,12 @@ class OrderResult:
 
 
 def resolve_mode() -> ExecutionMode:
-    """LIVE requires BOTH UPSTOX_EXECUTION_MODE=LIVE and
-    UPSTOX_LIVE_TRADING_CONFIRMED=YES. Two independent switches, so no
-    single misconfigured variable can silently arm real trading.
+    """LIVE requires UPSTOX_EXECUTION_MODE=LIVE AND a second, independent
+    confirmation — either UPSTOX_LIVE_TRADING_CONFIRMED=YES in the
+    environment, or the runtime arm switch armed via the frontend's
+    execution-control panel. Two independent switches, so no single
+    misconfigured variable or forgotten toggle can silently arm real
+    trading.
     """
     raw = (os.environ.get("UPSTOX_EXECUTION_MODE") or "DRY_RUN").strip().upper()
 
@@ -110,10 +121,11 @@ def resolve_mode() -> ExecutionMode:
 
     if mode is ExecutionMode.LIVE:
         confirmed = (os.environ.get("UPSTOX_LIVE_TRADING_CONFIRMED") or "").strip().upper()
-        if confirmed != "YES":
+        if confirmed != "YES" and not execution_runtime_state.is_armed():
             logger.error(
-                "UPSTOX_EXECUTION_MODE=LIVE but UPSTOX_LIVE_TRADING_CONFIRMED is not 'YES'. "
-                "Refusing to arm live trading; falling back to DRY_RUN."
+                "UPSTOX_EXECUTION_MODE=LIVE but neither UPSTOX_LIVE_TRADING_CONFIRMED=YES "
+                "nor the runtime arm switch is set. Refusing to arm live trading; "
+                "falling back to DRY_RUN."
             )
             return ExecutionMode.DRY_RUN
 

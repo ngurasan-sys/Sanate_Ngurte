@@ -8,8 +8,19 @@ from backend.app.execution.order_gateway import (
     OrderRequest,
     resolve_mode,
 )
+from backend.app.execution.runtime_state import execution_runtime_state
 
 _RealAsyncClient = httpx.AsyncClient
+
+
+@pytest.fixture(autouse=True)
+def _reset_runtime_arm_state():
+    # The runtime arm switch is a process-wide singleton — leaking an
+    # armed state from one test into the next would let LIVE mode
+    # activate without either test actually asking for it.
+    execution_runtime_state.disarm()
+    yield
+    execution_runtime_state.disarm()
 
 
 def _mock_client_factory(transport):
@@ -53,6 +64,23 @@ def test_live_mode_armed_only_with_both_switches(monkeypatch):
     monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "LIVE")
     monkeypatch.setenv("UPSTOX_LIVE_TRADING_CONFIRMED", "YES")
     assert resolve_mode() is ExecutionMode.LIVE
+
+
+def test_live_mode_armed_via_runtime_switch_alone(monkeypatch):
+    # The runtime arm switch (toggled from the frontend) is an
+    # independent alternative to the env-var confirmation — either one
+    # satisfies the second switch, but UPSTOX_EXECUTION_MODE=LIVE is
+    # still required as the first.
+    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "LIVE")
+    monkeypatch.delenv("UPSTOX_LIVE_TRADING_CONFIRMED", raising=False)
+    execution_runtime_state.arm(note="test")
+    assert resolve_mode() is ExecutionMode.LIVE
+
+
+def test_runtime_switch_alone_without_live_env_mode_stays_dry_run(monkeypatch):
+    monkeypatch.delenv("UPSTOX_EXECUTION_MODE", raising=False)
+    execution_runtime_state.arm(note="test")
+    assert resolve_mode() is ExecutionMode.DRY_RUN
 
 
 def test_sandbox_mode_needs_no_extra_confirmation(monkeypatch):

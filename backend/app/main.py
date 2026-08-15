@@ -20,6 +20,7 @@ from backend.app.api.endpoints.levels import router as levels_router
 from backend.app.api.endpoints.broker import router as broker_router
 from backend.app.api.endpoints.algo import router as algo_router
 from backend.app.api.endpoints.live_stream import router as live_stream_router
+from backend.app.api.endpoints.execution_control import router as execution_control_router
 
 from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
@@ -260,6 +261,10 @@ app.include_router(
 
 app.include_router(
     algo_router
+)
+
+app.include_router(
+    execution_control_router
 )
 
 

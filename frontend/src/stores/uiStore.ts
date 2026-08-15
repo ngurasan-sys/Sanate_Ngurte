@@ -35,7 +35,8 @@ export type NavigationPage =
   | 'MARKET_BREADTH'
   | 'TWO_CANDLE'
   | 'EXPIRY_REVERSAL'
-  | 'EXPIRY_TRACKER';
+  | 'EXPIRY_TRACKER'
+  | 'EXECUTION_CONTROL';
 
 interface UIState {
   sidebarExpanded: boolean;

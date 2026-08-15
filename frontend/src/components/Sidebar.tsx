@@ -9,6 +9,7 @@ import {
   GitBranch,
   ShieldAlert,
   ArrowUpDown,
+  Power,
   BookOpen,
   Settings,
   HelpCircle,
@@ -103,6 +104,7 @@ export const Sidebar: React.FC = () => {
         { label: 'Orders', icon: FileText, page: 'ORDERS' },
         { label: 'P&L', icon: TrendingUp, page: 'PNL' },
         { label: 'Risk', icon: ShieldAlert, page: 'RISK' },
+        { label: 'Execution Control', icon: Power, page: 'EXECUTION_CONTROL' },
       ],
     },
     {
