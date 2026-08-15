@@ -34,7 +34,8 @@ export type NavigationPage =
   | 'INTRADAY_TREND_SCALPER'
   | 'MARKET_BREADTH'
   | 'TWO_CANDLE'
-  | 'EXPIRY_REVERSAL';
+  | 'EXPIRY_REVERSAL'
+  | 'EXPIRY_TRACKER';
 
 interface UIState {
   sidebarExpanded: boolean;

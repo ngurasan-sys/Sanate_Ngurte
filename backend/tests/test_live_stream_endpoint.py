@@ -1,5 +1,6 @@
 import asyncio
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -87,14 +88,31 @@ def test_live_stream_oh_ol_strategy_payload_shape():
 def test_live_stream_oi_difference_pct_populated_for_non_trending_strategy():
     # straddle resolves to the bare "NIFTY" instrument; diff_oi_pct must be
     # read from the same per-underlying gap-engine dict that feeds `regime`.
+    #
+    # gap_opening_engine.handle_trending_oi is patched to a no-op for the
+    # duration of this test: it's a real subscriber to the "trending_oi"
+    # event-bus topic, and trending_oi_engine's own 1Hz publish loop fires
+    # unconditionally (even with all-default-zero data when no real OI
+    # ticks have arrived yet) as soon as it's been running for ~1s. In the
+    # full real app — which this test intentionally exercises via
+    # TestClient(app) to verify the live-stream endpoint's actual wiring —
+    # that loop can genuinely fire within this test's window and overwrite
+    # the value under test with a fabricated 0.0 before the assertion runs,
+    # which has nothing to do with what this test verifies (the endpoint
+    # correctly reads gap_opening_engine.diff_oi_pct for non-trending
+    # strategies). Patching this one handler removes that unrelated race
+    # without disabling anything the assertion itself depends on.
     had_key = "NIFTY" in gap_opening_engine.diff_oi_pct
     previous = gap_opening_engine.diff_oi_pct.get("NIFTY")
     gap_opening_engine.diff_oi_pct["NIFTY"] = 42.5
     try:
-        with TestClient(app) as client:
-            with client.websocket_connect("/ws/live-stream?strategy=straddle") as ws:
-                payload = ws.receive_json()
-                assert payload["market_stats"]["oi_difference_pct"] == 42.5
+        with patch.object(
+            gap_opening_engine, "handle_trending_oi", new=AsyncMock()
+        ):
+            with TestClient(app) as client:
+                with client.websocket_connect("/ws/live-stream?strategy=straddle") as ws:
+                    payload = ws.receive_json()
+                    assert payload["market_stats"]["oi_difference_pct"] == 42.5
     finally:
         if had_key:
             gap_opening_engine.diff_oi_pct["NIFTY"] = previous
