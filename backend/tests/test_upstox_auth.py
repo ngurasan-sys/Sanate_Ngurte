@@ -3,7 +3,17 @@ import json
 import httpx
 import pytest
 
-from backend.app.core import upstox_auth
+from backend.app.core import credential_store, upstox_auth
+
+
+@pytest.fixture(autouse=True)
+def _isolate_credential_store(tmp_path, monkeypatch):
+    # These tests assert on env-var fallback behaviour; point the store at
+    # an empty tmp path so a real backend/.broker_credentials.json (e.g.
+    # from manual testing on this machine) can never leak in and short
+    # -circuit the env-var resolution these tests are checking.
+    monkeypatch.setattr(credential_store, "STORE_PATH", tmp_path / ".broker_credentials.json")
+    monkeypatch.setattr(credential_store, "KEY_PATH", tmp_path / ".credential_key")
 
 
 def test_load_token_returns_none_when_file_missing(tmp_path, monkeypatch):
@@ -54,6 +64,19 @@ async def test_exchange_code_for_token_raises_clear_error_when_env_missing(monke
         await upstox_auth.exchange_code_for_token("some-code")
 
     assert "UPSTOX_API_KEY not set" in str(excinfo.value)
+
+
+def test_get_authorization_url_prefers_stored_credentials_over_env(monkeypatch):
+    monkeypatch.setenv("UPSTOX_API_KEY", "env-client-id")
+    monkeypatch.setenv("UPSTOX_REDIRECT_URI", "http://localhost:8000/env-callback")
+    credential_store.save_credentials(
+        "upstox", {"api_key": "stored-client-id", "redirect_uri": "http://localhost:8000/stored-callback"}
+    )
+
+    url = upstox_auth.get_authorization_url()
+
+    assert "client_id=stored-client-id" in url
+    assert "client_id=env-client-id" not in url
 
 
 def test_get_authorization_url_uses_env_vars(monkeypatch):

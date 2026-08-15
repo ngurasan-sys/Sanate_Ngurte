@@ -10,3 +10,4 @@ httpx
 pytest-asyncio
 upstox-python-sdk
 python-dotenv
+cryptography

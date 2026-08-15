@@ -110,6 +110,7 @@ export const Sidebar: React.FC = () => {
     {
       section: 'BROKERAGE',
       items: [
+        { label: 'Broker Connections', icon: Link2, page: 'BROKER_CONNECTIONS' },
         { label: 'Upstox', icon: Link2, page: 'UPSTOX' },
       ],
     },
