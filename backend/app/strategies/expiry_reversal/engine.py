@@ -4,7 +4,9 @@ from collections import deque
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
+from backend.app.core import upstox_auth
 from backend.app.core.event_bus import event_bus
+from backend.app.market_data.expiry_calendar import ExpiryLookupError, expiry_calendar
 from backend.app.market_data.models import Candle, Tick
 from backend.app.strategies.trending_oi_price_action.indicators import DailyATR, SuperTrendIndicator
 
@@ -76,6 +78,7 @@ class ExpiryReversalEngine:
         """
         while self.running:
             try:
+                await self._refresh_expiry_flag()
                 for instrument in list(self.positions.keys()) or ["NIFTY FUT"]:
                     snapshot = self.get_state_snapshot(instrument)
                     await event_bus.publish("expiry_reversal_state", {
@@ -88,6 +91,24 @@ class ExpiryReversalEngine:
             except Exception as exc:
                 logger.error(f"Error in ExpiryReversalEngine snapshot loop: {exc}")
                 await asyncio.sleep(2)
+
+    async def _refresh_expiry_flag(self):
+        """Resolve whether today is the current-week expiry for the
+        reference symbol via Upstox's real Instrument Search API.
+        ExpiryCalendar caches per IST day, so calling this every snapshot
+        tick costs nothing beyond the first successful resolution of the
+        day. No saved token, or a failed lookup, leaves is_expiry_day at
+        its last known value — never guessed.
+        """
+        token = upstox_auth.load_token()
+        if not token:
+            return
+        try:
+            self.config.is_expiry_day = await expiry_calendar.is_today_expiry_day(
+                self.config.expiry_reference_symbol, token,
+            )
+        except ExpiryLookupError as exc:
+            logger.warning(f"Expiry lookup failed, keeping last known value: {exc}")
 
     def _get_state(self, instrument: str) -> Dict[str, Any]:
         if instrument not in self.positions:

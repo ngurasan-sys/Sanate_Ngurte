@@ -1,8 +1,11 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from datetime import datetime, timedelta, timezone
 
 from backend.app.strategies.expiry_reversal.engine import ExpiryReversalEngine
 from backend.app.strategies.expiry_reversal.models import ExpiryReversalConfig
+from backend.app.market_data.expiry_calendar import ExpiryLookupError
 from backend.app.market_data.models import Candle, Tick
 
 
@@ -219,3 +222,49 @@ async def test_get_state_snapshot_reflects_real_state(engine):
     assert snapshot["position_state"] == "TIER_1_ENTERED"
     assert snapshot["direction"] == "BEARISH"
     assert snapshot["lots_held"] == 2
+
+
+@pytest.mark.asyncio
+async def test_refresh_expiry_flag_no_token_leaves_value_unchanged(engine):
+    engine.config.is_expiry_day = False
+    with patch(
+        "backend.app.strategies.expiry_reversal.engine.upstox_auth.load_token",
+        return_value=None,
+    ), patch(
+        "backend.app.strategies.expiry_reversal.engine.expiry_calendar.is_today_expiry_day",
+        new=AsyncMock(),
+    ) as mock_lookup:
+        await engine._refresh_expiry_flag()
+
+    mock_lookup.assert_not_called()
+    assert engine.config.is_expiry_day is False
+
+
+@pytest.mark.asyncio
+async def test_refresh_expiry_flag_updates_from_real_lookup(engine):
+    with patch(
+        "backend.app.strategies.expiry_reversal.engine.upstox_auth.load_token",
+        return_value="saved-token",
+    ), patch(
+        "backend.app.strategies.expiry_reversal.engine.expiry_calendar.is_today_expiry_day",
+        new=AsyncMock(return_value=True),
+    ) as mock_lookup:
+        await engine._refresh_expiry_flag()
+
+    mock_lookup.assert_awaited_once_with(engine.config.expiry_reference_symbol, "saved-token")
+    assert engine.config.is_expiry_day is True
+
+
+@pytest.mark.asyncio
+async def test_refresh_expiry_flag_lookup_failure_keeps_last_known_value(engine):
+    engine.config.is_expiry_day = True
+    with patch(
+        "backend.app.strategies.expiry_reversal.engine.upstox_auth.load_token",
+        return_value="saved-token",
+    ), patch(
+        "backend.app.strategies.expiry_reversal.engine.expiry_calendar.is_today_expiry_day",
+        new=AsyncMock(side_effect=ExpiryLookupError("boom")),
+    ):
+        await engine._refresh_expiry_flag()
+
+    assert engine.config.is_expiry_day is True

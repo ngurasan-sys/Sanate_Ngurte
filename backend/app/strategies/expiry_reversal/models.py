@@ -34,10 +34,15 @@ class ExpiryReversalConfig(BaseModel):
     partial_exit_pct: float = 50.0  # fraction of position booked once price moves favorably
 
     # E. Time & distance filter
-    is_expiry_day: bool = False  # NOT computed — this codebase has no real expiry-date
-    # resolution wired up yet (see strike_selection.py). Must be supplied externally
-    # (e.g. from a config file updated per contract) rather than guessed from a
-    # hardcoded weekly-expiry calendar, which has changed across exchanges/years.
+    # Resolved automatically at runtime via expiry_calendar.py (Upstox's
+    # real Instrument Search API, expiry=current_week) whenever a saved
+    # OAuth token is available — see engine.py's _refresh_expiry_flag().
+    # This default only applies before that first successful resolution,
+    # or if no token is configured (mock mode): stays False rather than
+    # guessing from a hardcoded weekly-expiry-day assumption, which has
+    # changed across exchanges/years.
+    is_expiry_day: bool = False
+    expiry_reference_symbol: str = "NIFTY"
     late_session_start: str = "14:00"  # "around 2:00 PM" caution window, HH:MM
     atr_exhaustion_ratio: float = 0.95  # intraday range / daily ATR >= this => exhausted
     supertrend_period: int = 10
