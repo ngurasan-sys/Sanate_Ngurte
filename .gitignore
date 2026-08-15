@@ -133,3 +133,5 @@ Thumbs.db
 *.tmp
 *.temp
 *.bak
+# superpowers scratch workspaces
+.superpowers/
