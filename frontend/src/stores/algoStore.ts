@@ -2,6 +2,10 @@ import { create } from 'zustand';
 
 export type AlgoEngineStatus = 'STOPPED' | 'STARTING' | 'RUNNING' | 'PAUSED' | 'STOPPING' | 'ERROR';
 export type ExecutionMode = 'DATA_ONLY' | 'PAPER' | 'LIVE';
+// Who decides the trade — the strategy engines (AUTO) or the trader
+// placing orders directly through the Manual Trading panel (MANUAL).
+// Independent of ExecutionMode, which controls how an order executes.
+export type TradingMode = 'AUTO' | 'MANUAL';
 
 export interface Signal {
   id: string;
@@ -63,6 +67,7 @@ export interface RiskMetrics {
 interface AlgoState {
   algoEngineStatus: AlgoEngineStatus;
   executionMode: ExecutionMode;
+  tradingMode: TradingMode;
   strategies: StrategyMeta[];
   signals: Signal[];
   pipelineMetrics: PipelineMetrics;
@@ -70,6 +75,7 @@ interface AlgoState {
 
   setAlgoEngineStatus: (status: AlgoEngineStatus) => void;
   setExecutionMode: (mode: ExecutionMode) => void;
+  setTradingMode: (mode: TradingMode) => void;
   setStrategies: (strategies: StrategyMeta[]) => void;
   addSignal: (signal: Signal) => void;
   updatePipelineMetrics: (metrics: Partial<PipelineMetrics>) => void;
@@ -79,6 +85,7 @@ interface AlgoState {
 export const useAlgoStore = create<AlgoState>((set) => ({
   algoEngineStatus: 'STOPPED',
   executionMode: 'DATA_ONLY',
+  tradingMode: 'AUTO',
   strategies: [],
   signals: [],
   pipelineMetrics: {
@@ -106,6 +113,7 @@ export const useAlgoStore = create<AlgoState>((set) => ({
 
   setAlgoEngineStatus: (status) => set({ algoEngineStatus: status }),
   setExecutionMode: (mode) => set({ executionMode: mode }),
+  setTradingMode: (mode) => set({ tradingMode: mode }),
   setStrategies: (strategies) => set({ strategies }),
   addSignal: (signal) => set((state) => ({
     signals: [signal, ...state.signals].slice(0, 100) // Keep last 100 signals

@@ -30,6 +30,12 @@ class OptionAnalyticsConfig(BaseModel):
     pcr_low_extreme: float = 0.6    # <= this = excessive call writing (contrarian bearish)
     pcr_reversal_delta: float = 0.15  # move back from the extreme needed to confirm a turn
 
+    # --- Volatility risk premium (implied vs HAR-RV forecast) ---
+    historical_lookback_days: int = 120  # calendar days of daily candles to fetch
+    vrp_history_window: int = 60         # VRP readings retained for the Z-score baseline
+    vrp_rich_threshold: float = 1.0      # Z-score >= this => IV_RICH (favours selling vol)
+    vrp_cheap_threshold: float = -1.0    # Z-score <= this => IV_CHEAP (favours buying vol)
+
 
 class IvRegimeState(BaseModel):
     sufficient_data: bool
@@ -55,6 +61,29 @@ class PcrReversalState(BaseModel):
     reasoning: Optional[str] = None
 
 
+class SviState(BaseModel):
+    sufficient_data: bool
+    reason: Optional[str] = None
+    expiry: Optional[str] = None
+    tau_years: Optional[float] = None
+    forward: Optional[float] = None
+    atm_iv: Optional[float] = None
+    skew: Optional[float] = None  # OTM put IV - OTM call IV at +/-10% log-moneyness
+    arbitrage_free: Optional[bool] = None
+    params: Optional[dict] = None  # raw SVI: a, b, rho, m, sigma
+
+
+class VrpState(BaseModel):
+    sufficient_data: bool
+    reason: Optional[str] = None
+    implied_vol: Optional[float] = None       # SVI ATM IV
+    forecast_vol: Optional[float] = None      # HAR-RV one-step-ahead annualized vol
+    vrp: Optional[float] = None               # implied_vol - forecast_vol, in vol points
+    z_score: Optional[float] = None
+    classification: str = "UNKNOWN"           # IV_RICH | IV_CHEAP | NEUTRAL | UNKNOWN
+    signal: str = "NONE"                      # SELL_VOLATILITY | BUY_VOLATILITY | NONE
+
+
 class OptionAnalyticsSnapshot(BaseModel):
     timestamp: datetime
     underlying_key: str
@@ -62,3 +91,5 @@ class OptionAnalyticsSnapshot(BaseModel):
     atm_strike: Optional[float] = None
     iv_regime: IvRegimeState
     pcr_reversal: PcrReversalState
+    svi: SviState
+    vrp: VrpState

@@ -10,6 +10,10 @@ class Decision(BaseModel):
     action: str
     timestamp: datetime
     reasoning: str
+    # Distinguishes an automated decision from a manual_trading order
+    # (which tags "MANUAL_TRADING" itself) — RiskEngine uses this to know
+    # whether the algo capital budget/pyramid schedule apply at all.
+    source: str = "ALGO"
 
 class DecisionEngine:
     def __init__(self):

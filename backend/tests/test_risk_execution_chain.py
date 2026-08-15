@@ -10,9 +10,23 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from backend.app.engines.algo_config import algo_config_state
 from backend.app.engines.execution import ExecutionEngine
 from backend.app.engines.risk import RiskEngine
 from backend.app.execution.risk_limits import RiskLimits, RiskState
+
+
+@pytest.fixture(autouse=True)
+def _reset_algo_config():
+    # These decisions default to source="ALGO" (no explicit source set),
+    # so they're now also subject to the algo-enabled gate added alongside
+    # AlgoTradingConfig. SYSTEM mode + enabled reproduces this file's
+    # original assumption (any approved TRADE decision reaches execution)
+    # without needing a capital budget or pyramid schedule.
+    algo_config_state.configure(mode="SYSTEM")
+    algo_config_state.enable()
+    yield
+    algo_config_state.configure(mode="SYSTEM")
 
 
 def _decision(**kw):

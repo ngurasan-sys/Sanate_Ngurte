@@ -68,6 +68,7 @@ export const Sidebar: React.FC = () => {
       section: 'ANALYSIS',
       items: [
         { label: 'Greeks', icon: Activity, page: 'GREEKS' },
+        { label: 'Option Analytics', icon: Sparkles, page: 'OPTION_ANALYTICS' },
         { label: 'Levels', icon: GitBranch, page: 'LEVELS' },
         { label: 'Technical', icon: Settings, page: 'TECHNICAL' },
         { label: 'Order Flow', icon: ArrowUpDown, page: 'ORDER_FLOW' },
@@ -89,6 +90,7 @@ export const Sidebar: React.FC = () => {
         { label: 'Intraday Trend Scalper', icon: GitBranch, page: 'INTRADAY_TREND_SCALPER' },
         { label: 'Pullback Chop Filter', icon: Activity, page: 'PULLBACK_CHOP_FILTER' },
         { label: '2 Candle Scalper', icon: Crosshair, page: 'TWO_CANDLE' },
+        { label: 'CAS Dislocation', icon: Radar, page: 'CAS_DISLOCATION' },
       ],
     },
     {

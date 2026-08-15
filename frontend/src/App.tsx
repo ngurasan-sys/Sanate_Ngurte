@@ -31,12 +31,14 @@ import { TrendingOiCrossover } from './views/TrendingOiCrossover';
 import { StraddleMonitorView } from './views/StraddleMonitorView';
 import { IntradayTrendScalperView } from './views/IntradayTrendScalperView';
 import { PullbackChopFilterView } from './views/PullbackChopFilterView';
+import { OptionAnalyticsView } from './views/OptionAnalyticsView';
 import MarketBreadthPage from './components/breadth/MarketBreadthPage';
 import { TwoCandleView } from './views/TwoCandleView';
 import { ExpiryReversalView } from './views/ExpiryReversalView';
 import { ExpiryTracker } from './components/expiry/ExpiryTracker';
 import { ExecutionControlView } from './views/ExecutionControlView';
 import { BrokerConnectionsView } from './views/BrokerConnectionsView';
+import { CASDislocationView } from './views/CASDislocationView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -73,19 +75,19 @@ export const App: React.FC = () => {
         <div className="grid grid-cols-2 gap-4 font-mono text-xs text-zinc-400">
           <div>
             <span className="text-zinc-500 block">Spot:</span>
-            <span className="text-sm font-semibold text-zinc-100">₹{data.spot.toLocaleString()}</span>
+            <span className="text-sm font-semibold text-zinc-100">{data.spot.toLocaleString()}</span>
           </div>
           <div>
             <span className="text-zinc-500 block">VWAP:</span>
-            <span className="text-sm font-semibold text-zinc-100">₹{data.vwap.toLocaleString()}</span>
+            <span className="text-sm font-semibold text-zinc-100">{data.vwap.toLocaleString()}</span>
           </div>
           <div>
             <span className="text-zinc-500 block">Support:</span>
-            <span className="text-sm font-semibold text-emerald-400">₹{data.support.toLocaleString()}</span>
+            <span className="text-sm font-semibold text-emerald-400">{data.support.toLocaleString()}</span>
           </div>
           <div>
             <span className="text-zinc-500 block">Resistance:</span>
-            <span className="text-sm font-semibold text-rose-400">₹{data.resistance.toLocaleString()}</span>
+            <span className="text-sm font-semibold text-rose-400">{data.resistance.toLocaleString()}</span>
           </div>
           <div>
             <span className="text-zinc-500 block">IV %:</span>
@@ -120,6 +122,9 @@ export const App: React.FC = () => {
 
       case 'TWO_CANDLE':
         return <TwoCandleView />;
+
+      case 'CAS_DISLOCATION':
+        return <CASDislocationView />;
 
       case 'EXPIRY_REVERSAL':
         return <ExpiryReversalView />;
@@ -260,6 +265,9 @@ export const App: React.FC = () => {
 
       case 'GREEKS':
         return <GreeksPanel />;
+
+      case 'OPTION_ANALYTICS':
+        return <OptionAnalyticsView />;
 
       case 'LEVELS':
         return <LevelPanel />;

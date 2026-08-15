@@ -10,6 +10,7 @@ export type NavigationPage =
   | 'FUTURE_OI'
   | 'OPTION_CHAIN'
   | 'GREEKS'
+  | 'OPTION_ANALYTICS'
   | 'LEVELS'
   | 'TECHNICAL'
   | 'ORDER_FLOW'
@@ -37,7 +38,8 @@ export type NavigationPage =
   | 'EXPIRY_REVERSAL'
   | 'EXPIRY_TRACKER'
   | 'EXECUTION_CONTROL'
-  | 'BROKER_CONNECTIONS';
+  | 'BROKER_CONNECTIONS'
+  | 'CAS_DISLOCATION';
 
 interface UIState {
   sidebarExpanded: boolean;

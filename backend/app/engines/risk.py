@@ -5,11 +5,15 @@ from typing import Any, Dict
 from pydantic import BaseModel
 
 from backend.app.core.event_bus import event_bus
+from backend.app.engines.algo_config import algo_config_state
 from backend.app.execution.risk_limits import (
     RiskLimits,
     RiskState,
+    check_cas_enabled,
+    evaluate_algo_extra,
     evaluate_all,
 )
+from backend.app.strategies.cas_dislocation.config_state import cas_config_state
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +65,29 @@ class RiskEngine:
     async def record_execution(self, exec_data: Dict[str, Any]):
         """Count only real broker submissions against the daily order cap.
         A DRY_RUN or rejected order must not consume the day's budget.
+
+        The algo capital budget follows the same real-submission-only rule
+        (DRY_RUN never spends real capital). The pyramid tier counter is
+        looser on purpose: it advances on DRY_RUN too, so tier progression
+        is actually testable without needing UPSTOX_EXECUTION_MODE=LIVE.
         """
-        if exec_data.get("status") == "SUBMITTED":
+        status = exec_data.get("status")
+        if status == "SUBMITTED":
             self.state.orders_placed_today += 1
+
+        if exec_data.get("source") != "ALGO":
+            return
+
+        if status == "SUBMITTED":
+            self.state.capital_deployed_today += (
+                exec_data.get("quantity", 0) * exec_data.get("price", 0.0)
+            )
+        if status in ("SUBMITTED", "DRY_RUN"):
+            instrument_key = exec_data.get("instrument_token")
+            if instrument_key:
+                self.state.fill_count_by_instrument[instrument_key] = (
+                    self.state.fill_count_by_instrument.get(instrument_key, 0) + 1
+                )
 
     async def process_decision(self, dec_data: Dict[str, Any]):
         decision_id = dec_data.get("decision_id", "UNKNOWN")
@@ -73,24 +97,45 @@ class RiskEngine:
             return
 
         quantity = int(dec_data.get("quantity", 0) or 0)
+        price = float(dec_data.get("price", 0.0) or 0.0)
+        instrument = dec_data.get("instrument", "")
+        instrument_token = dec_data.get("instrument_token", "")
+        source = dec_data.get("source", "ALGO")
         now = datetime.now().time()
 
         approved, reasons = evaluate_all(self.limits, self.state, quantity, now)
+
+        # Manual trading orders carry their own per-order sizing already —
+        # the algo capital budget and pyramid schedule apply only to
+        # ALGO-sourced decisions (see risk_limits.evaluate_algo_extra).
+        if source == "ALGO":
+            algo_approved, algo_reasons = evaluate_algo_extra(
+                algo_config_state.get(), self.state, instrument, instrument_token, quantity, price,
+            )
+            approved = approved and algo_approved
+            reasons = reasons + algo_reasons
+        elif source == "CAS_DISLOCATION":
+            cas_reason = check_cas_enabled(cas_config_state.get())
+            if cas_reason:
+                approved = False
+                reasons = reasons + [cas_reason]
+
         reason_text = "Passed all risk checks." if approved else " ".join(reasons)
 
         await self._publish(decision_id, dec_data, approved, reason_text)
 
         if approved:
             await event_bus.publish("EXECUTION_REQUEST", {
-                "instrument": dec_data.get("instrument"),
-                "instrument_token": dec_data.get("instrument_token"),
+                "instrument": instrument,
+                "instrument_token": instrument_token,
                 "transaction_type": dec_data.get("transaction_type", "BUY"),
                 "quantity": quantity,
                 "order_type": dec_data.get("order_type", "MARKET"),
                 "product": dec_data.get("product", "I"),
-                "price": dec_data.get("price", 0.0),
+                "price": price,
                 "decision_id": decision_id,
                 "timestamp": dec_data.get("timestamp"),
+                "source": source,
             })
         else:
             logger.info("Risk REJECTED decision %s: %s", decision_id, reason_text)

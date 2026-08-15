@@ -239,3 +239,126 @@ def test_analyse_handles_all_invalid_iv_without_crashing():
     snapshot = engine.analyse(_chain(call_iv=0.0, put_iv=0.0))
     assert snapshot.iv_regime.sufficient_data is False
     assert snapshot.iv_regime.atm_iv is None
+
+
+# --------------------------- Engine.analyse: SVI ---------------------------
+
+def test_analyse_reports_svi_insufficient_without_expiry_field():
+    # _chain() rows carry no "expiry" key — the real Upstox chain always
+    # does, but a malformed/partial chain shouldn't crash the snapshot,
+    # just degrade this one field honestly.
+    engine = OptionAnalyticsEngine(OptionAnalyticsConfig())
+    snapshot = engine.analyse(_chain())
+    assert snapshot.svi.sufficient_data is False
+    assert "expiry" in snapshot.svi.reason.lower()
+
+
+def _chain_with_expiry(atm=24500, expiry="2099-01-01", base_iv=12.0):
+    """Smile with a real skew (put IV richer than call IV, rising away from
+    ATM) so the SVI fit has actual curvature to recover, not a flat line.
+    """
+    strikes = [atm + (i - 5) * 50 for i in range(11)]
+    rows = []
+    for s in strikes:
+        moneyness = (s - atm) / atm
+        call_iv = base_iv + max(moneyness, 0) * 20
+        put_iv = base_iv - min(moneyness, 0) * 30
+        row = _row(s, spot=atm + 10, call_iv=call_iv, put_iv=put_iv)
+        row["expiry"] = expiry
+        rows.append(row)
+    return rows
+
+
+def test_analyse_fits_svi_when_expiry_present():
+    engine = OptionAnalyticsEngine(OptionAnalyticsConfig())
+    snapshot = engine.analyse(_chain_with_expiry())
+
+    assert snapshot.svi.sufficient_data is True
+    assert snapshot.svi.expiry == "2099-01-01"
+    assert snapshot.svi.tau_years > 0
+    assert snapshot.svi.atm_iv > 0
+    assert snapshot.svi.arbitrage_free in (True, False)
+    assert set(snapshot.svi.params.keys()) == {"a", "b", "rho", "m", "sigma"}
+
+
+# --------------------------- Engine.analyse: VRP ---------------------------
+
+def _simulated_closes(n=200, seed=5, start=24500.0):
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    sigma_daily = 0.15 / (252 ** 0.5)
+    closes = [start]
+    for r in rng.normal(0.0, sigma_daily, size=n):
+        closes.append(closes[-1] * np.exp(r))
+    return closes
+
+
+def test_analyse_reports_vrp_insufficient_without_svi():
+    # _chain() has no "expiry" -> SVI fails -> VRP must degrade too,
+    # since it depends on SVI's implied vol.
+    engine = OptionAnalyticsEngine(OptionAnalyticsConfig())
+    snapshot = engine.analyse(_chain(), daily_closes=_simulated_closes())
+    assert snapshot.vrp.sufficient_data is False
+    assert "svi" in snapshot.vrp.reason.lower()
+
+
+def test_analyse_reports_vrp_insufficient_without_daily_closes():
+    engine = OptionAnalyticsEngine(OptionAnalyticsConfig())
+    snapshot = engine.analyse(_chain_with_expiry(), daily_closes=None)
+    assert snapshot.vrp.sufficient_data is False
+    assert "closes" in snapshot.vrp.reason.lower()
+
+
+def test_analyse_reports_vrp_insufficient_with_too_few_closes():
+    engine = OptionAnalyticsEngine(OptionAnalyticsConfig())
+    snapshot = engine.analyse(_chain_with_expiry(), daily_closes=[24500.0] * 10)
+    assert snapshot.vrp.sufficient_data is False
+    assert "har-rv" in snapshot.vrp.reason.lower()
+
+
+def test_analyse_computes_vrp_when_svi_and_closes_available():
+    engine = OptionAnalyticsEngine(OptionAnalyticsConfig())
+    snapshot = engine.analyse(_chain_with_expiry(), daily_closes=_simulated_closes())
+
+    assert snapshot.vrp.sufficient_data is True
+    assert snapshot.vrp.implied_vol == snapshot.svi.atm_iv
+    assert snapshot.vrp.forecast_vol > 0
+    assert snapshot.vrp.vrp == pytest.approx(snapshot.vrp.implied_vol - snapshot.vrp.forecast_vol)
+    # First reading ever -> no history yet to Z-score against.
+    assert snapshot.vrp.z_score is None
+    assert snapshot.vrp.classification == "UNKNOWN"
+    assert snapshot.vrp.signal == "NONE"
+
+
+def test_analyse_vrp_zscore_stays_none_while_history_has_zero_variance():
+    # Identical chain/closes every poll -> identical VRP every time -> zero
+    # variance in the rolling history -> vrp_zscore legitimately returns
+    # None (see test_vrp.py::test_vrp_zscore_none_with_zero_variance_history),
+    # not a divide-by-zero crash.
+    engine = OptionAnalyticsEngine(OptionAnalyticsConfig())
+    closes = _simulated_closes()
+
+    for _ in range(5):
+        engine.analyse(_chain_with_expiry(), daily_closes=closes)
+
+    snapshot = engine.analyse(_chain_with_expiry(), daily_closes=closes)
+    assert snapshot.vrp.sufficient_data is True
+    assert snapshot.vrp.z_score is None
+    assert snapshot.vrp.classification == "UNKNOWN"
+
+
+def test_analyse_vrp_zscore_becomes_available_once_history_has_variance():
+    # vrp_zscore standardizes against the *history* recorded so far (see
+    # _compute_vrp_state: it reads self._vrp_history before this poll's
+    # reading is appended) — so the history itself needs varying readings,
+    # not just a current reading that differs from a still-uniform one.
+    engine = OptionAnalyticsEngine(OptionAnalyticsConfig())
+    closes = _simulated_closes()
+
+    for base_iv in [10.0, 12.0, 14.0, 16.0, 18.0]:
+        engine.analyse(_chain_with_expiry(base_iv=base_iv), daily_closes=closes)
+
+    snapshot = engine.analyse(_chain_with_expiry(base_iv=20.0), daily_closes=closes)
+    assert snapshot.vrp.sufficient_data is True
+    assert snapshot.vrp.z_score is not None
+    assert snapshot.vrp.classification in ("IV_RICH", "IV_CHEAP", "NEUTRAL")

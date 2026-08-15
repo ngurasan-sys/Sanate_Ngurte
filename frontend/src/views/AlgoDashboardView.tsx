@@ -1,15 +1,17 @@
 import OpenHighTable from "../components/open_high/OpenHighTable";
 import React from 'react';
 import { useAlgoStore } from '../stores/algoStore';
-import type { ExecutionMode } from '../stores/algoStore';
+import type { ExecutionMode, TradingMode } from '../stores/algoStore';
 import { useSystemStore } from '../stores/systemStore';
 import StatusBadge from '../components/StatusBadge';
-import { Play, Square, Pause, Activity, Zap, Shield, BarChart, Server, Layers, Cpu, Compass, HardDrive } from 'lucide-react';
+import ManualTradingPanel from '../components/ManualTradingPanel';
+import AlgoTradingConfigPanel from '../components/AlgoTradingConfigPanel';
+import { Play, Square, Pause, Activity, Zap, Shield, BarChart, Server, Layers, Cpu, Compass, HardDrive, User, Bot } from 'lucide-react';
 
 export const AlgoDashboardView: React.FC = () => {
   const {
-    algoEngineStatus, executionMode, strategies, signals, pipelineMetrics, riskMetrics,
-    setAlgoEngineStatus, setExecutionMode
+    algoEngineStatus, executionMode, tradingMode, strategies, signals, pipelineMetrics, riskMetrics,
+    setAlgoEngineStatus, setExecutionMode, setTradingMode
   } = useAlgoStore();
 
   const { brokerageStatus } = useSystemStore();
@@ -83,6 +85,29 @@ export const AlgoDashboardView: React.FC = () => {
           <span className="text-zinc-200">&lt; {brokerageStatus.wsLatency || 1} ms</span>
         </div>
       </div>
+
+      {/* TRADING MODE TOGGLE — AUTO (strategy engines) vs MANUAL (this trader, direct orders) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-xs text-zinc-500 uppercase tracking-wider font-bold">
+          Trading Mode
+        </div>
+        <div className="flex gap-1 bg-zinc-950 border border-zinc-800 rounded p-1">
+          <button
+            onClick={() => setTradingMode('AUTO' as TradingMode)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${tradingMode === 'AUTO' ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'text-zinc-500 hover:text-zinc-300'}`}
+          >
+            <Bot size={13} /> Auto
+          </button>
+          <button
+            onClick={() => setTradingMode('MANUAL' as TradingMode)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${tradingMode === 'MANUAL' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-zinc-500 hover:text-zinc-300'}`}
+          >
+            <User size={13} /> Manual
+          </button>
+        </div>
+      </div>
+
+      {tradingMode === 'MANUAL' ? <ManualTradingPanel /> : <AlgoTradingConfigPanel />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 

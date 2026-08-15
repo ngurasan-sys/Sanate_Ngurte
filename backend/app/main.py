@@ -22,7 +22,11 @@ from backend.app.api.endpoints.algo import router as algo_router
 from backend.app.api.endpoints.live_stream import router as live_stream_router
 from backend.app.api.endpoints.execution_control import router as execution_control_router
 from backend.app.api.endpoints.brokers import router as brokers_router
+from backend.app.api.endpoints.manual_trading import router as manual_trading_router
+from backend.app.api.endpoints.algo_config import router as algo_config_router
+from backend.app.api.endpoints.cas_dislocation import router as cas_dislocation_router
 
+from backend.app.engines.opportunity import opportunity_engine
 from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
 from backend.app.engines.execution import execution_engine
@@ -37,6 +41,8 @@ from backend.app.strategies.gap_opening.engine import gap_opening_engine
 from backend.app.strategies.expiry_reversal import expiry_reversal_engine
 from backend.app.strategies.expiry_engine import expiry_oi_tracker_engine
 from backend.app.strategies.option_analytics import option_analytics_engine
+from backend.app.strategies.manual_trading import manual_trading_engine
+from backend.app.strategies.cas_dislocation.engine import cas_dislocation_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
 from backend.app.market_data.upstox_v3 import upstox_client
 from backend.app.core import upstox_auth
@@ -85,6 +91,11 @@ async def lifespan(app: FastAPI):
     # Downstream Engines & Processors
     # ---------------------------------------------------------
 
+    # STRATEGY_SIGNAL -> OPPORTUNITY_CREATED -> DECISION_CREATED -> risk -> execution.
+    # opportunity_engine was previously never started here, so no strategy
+    # signal reached risk/execution regardless of DRY_RUN/LIVE mode or the
+    # arm switch — this is what actually closes that gap.
+    opportunity_engine.start()
     decision_engine.start()
     risk_engine.start()
     execution_engine.start()
@@ -99,6 +110,8 @@ async def lifespan(app: FastAPI):
     expiry_reversal_engine.start()
     expiry_oi_tracker_engine.start()
     option_analytics_engine.start()
+    manual_trading_engine.start()
+    cas_dislocation_engine.start()
     market_breadth_engine.start()
 
     # Start Upstox stream — use a saved token if we have one, otherwise
@@ -157,6 +170,9 @@ async def lifespan(app: FastAPI):
         if hasattr(decision_engine, "stop"):
             decision_engine.stop()
 
+        if hasattr(opportunity_engine, "stop"):
+            opportunity_engine.stop()
+
         if hasattr(trending_oi_engine, "stop"):
             trending_oi_engine.stop()
 
@@ -183,6 +199,12 @@ async def lifespan(app: FastAPI):
 
         if hasattr(option_analytics_engine, "stop"):
             option_analytics_engine.stop()
+
+        if hasattr(manual_trading_engine, "stop"):
+            manual_trading_engine.stop()
+
+        if hasattr(cas_dislocation_engine, "stop"):
+            cas_dislocation_engine.stop()
 
         if hasattr(market_breadth_engine, "stop"):
             market_breadth_engine.stop()
@@ -270,6 +292,18 @@ app.include_router(
 
 app.include_router(
     brokers_router
+)
+
+app.include_router(
+    manual_trading_router
+)
+
+app.include_router(
+    algo_config_router
+)
+
+app.include_router(
+    cas_dislocation_router
 )
 
 

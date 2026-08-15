@@ -44,6 +44,8 @@ class ExecutionEngine:
         instrument_token = req_data.get("instrument_token")
         decision_id = req_data.get("decision_id")
         quantity = int(req_data.get("quantity", 0) or 0)
+        price = float(req_data.get("price", 0.0) or 0.0)
+        source = req_data.get("source")
 
         if not instrument_token:
             detail = (
@@ -52,7 +54,8 @@ class ExecutionEngine:
             )
             logger.error(detail)
             await self._publish_update(
-                instrument, decision_id, "REJECTED", resolve_mode(), detail=detail,
+                instrument, instrument_token, decision_id, "REJECTED", resolve_mode(),
+                quantity=quantity, price=price, source=source, detail=detail,
             )
             return
 
@@ -62,7 +65,7 @@ class ExecutionEngine:
             quantity=quantity,
             order_type=req_data.get("order_type", "MARKET"),
             product=req_data.get("product", "I"),
-            price=float(req_data.get("price", 0.0) or 0.0),
+            price=price,
             tag=f"dec_{decision_id}" if decision_id else None,
         )
 
@@ -70,22 +73,31 @@ class ExecutionEngine:
 
         await self._publish_update(
             instrument,
+            instrument_token,
             decision_id,
             result.status,
             result.mode,
+            quantity=quantity,
+            price=price,
+            source=source,
             order_id=result.order_id,
             detail=result.detail,
         )
 
     async def _publish_update(
-        self, instrument, decision_id, status: str, mode: ExecutionMode,
+        self, instrument, instrument_token, decision_id, status: str, mode: ExecutionMode,
+        quantity: int = 0, price: float = 0.0, source: str = None,
         order_id=None, detail=None,
     ) -> None:
         await event_bus.publish("EXECUTION_UPDATE", {
             "instrument": instrument,
+            "instrument_token": instrument_token,
             "decision_id": decision_id,
             "status": status,
             "mode": mode.value,
+            "quantity": quantity,
+            "price": price,
+            "source": source,
             "order_id": order_id,
             "detail": detail,
             "timestamp": datetime.now().isoformat(),
