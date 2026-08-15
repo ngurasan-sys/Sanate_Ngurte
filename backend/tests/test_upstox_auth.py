@@ -84,3 +84,22 @@ async def test_exchange_code_for_token_failure_raises(monkeypatch):
 
     with pytest.raises(upstox_auth.UpstoxAuthError):
         await upstox_auth.exchange_code_for_token("bad-code")
+
+
+@pytest.mark.asyncio
+async def test_exchange_code_for_token_transport_error_wrapped(monkeypatch):
+    monkeypatch.setenv("UPSTOX_API_KEY", "my-client-id")
+    monkeypatch.setenv("UPSTOX_API_SECRET", "my-secret")
+    monkeypatch.setenv("UPSTOX_REDIRECT_URI", "http://localhost:8000/callback")
+
+    def handler(request):
+        raise httpx.ConnectError("connection refused")
+
+    transport = httpx.MockTransport(handler)
+    original_async_client = upstox_auth.httpx.AsyncClient
+    monkeypatch.setattr(
+        upstox_auth.httpx, "AsyncClient", lambda *a, **kw: original_async_client(transport=transport)
+    )
+
+    with pytest.raises(upstox_auth.UpstoxAuthError):
+        await upstox_auth.exchange_code_for_token("auth-code-123")

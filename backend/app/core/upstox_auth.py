@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode
 
-# Import httpx - will be monkeypatched by tests
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -53,23 +52,24 @@ def get_authorization_url() -> str:
 
 
 async def exchange_code_for_token(code: str) -> str:
-    # Use the patched AsyncClient, which tests can intercept
-    # The patched version should provide a mock transport
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            TOKEN_URL,
-            data={
-                "code": code,
-                "client_id": os.environ["UPSTOX_API_KEY"],
-                "client_secret": os.environ["UPSTOX_API_SECRET"],
-                "redirect_uri": os.environ["UPSTOX_REDIRECT_URI"],
-                "grant_type": "authorization_code",
-            },
-            headers={
-                "accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": os.environ["UPSTOX_API_KEY"],
+                    "client_secret": os.environ["UPSTOX_API_SECRET"],
+                    "redirect_uri": os.environ["UPSTOX_REDIRECT_URI"],
+                    "grant_type": "authorization_code",
+                },
+                headers={
+                    "accept": "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+    except httpx.HTTPError as exc:
+        raise UpstoxAuthError(f"Token exchange request failed: {exc}")
 
     if response.status_code != 200:
         raise UpstoxAuthError(
@@ -82,5 +82,3 @@ async def exchange_code_for_token(code: str) -> str:
         raise UpstoxAuthError(f"Token exchange response missing access_token: {data}")
 
     return access_token
-
-
