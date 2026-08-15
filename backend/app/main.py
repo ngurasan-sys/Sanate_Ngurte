@@ -23,10 +23,8 @@ from backend.app.strategies.oh_ol import oh_ol_strategy
 from backend.app.strategies.straddle.straddle_engine import straddle_engine
 from backend.app.strategies.pullback_chop_filter.engine import pullback_chop_filter_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
-from backend.app.market_data.upstox_v3 import UpstoxV3Client
-
-# Mock or global instance
-upstox_client = UpstoxV3Client()
+from backend.app.market_data.upstox_v3 import upstox_client
+from backend.app.core import upstox_auth
 
 # =============================================================
 # LOGGING
@@ -84,7 +82,11 @@ async def lifespan(app: FastAPI):
     pullback_chop_filter_engine.start()
     market_breadth_engine.start()
 
-    # Start Upstox stream
+    # Start Upstox stream — use a saved token if we have one, otherwise
+    # this stays in the existing mock-mode (logs a warning, no crash).
+    saved_token = upstox_auth.load_token()
+    if saved_token:
+        upstox_client.configure(saved_token)
     asyncio.create_task(upstox_client.connect())
 
     # ---------------------------------------------------------
