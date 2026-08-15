@@ -1,63 +1,75 @@
 import logging
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
+
+from backend.app.core import upstox_auth
+from backend.app.market_data.upstox_v3 import upstox_client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/broker/upstox", tags=["broker"])
 
-@router.get("/login")
-async def upstox_login():
-    # Simulate redirecting to Upstox OAuth
-    # In a real app, this would be https://api.upstox.com/v2/login/authorization/dialog?...
-    # Here, we will redirect directly to our callback with a mock code to simulate the flow
-    return RedirectResponse(url="/api/v1/broker/upstox/callback?code=mock_auth_code_12345&state=somerandomstate")
 
-@router.get("/callback")
-async def upstox_callback(code: str = Query(...), state: str = Query(None)):
-    logger.info(f"Received Upstox callback with code: {code}")
+def _result_page(status: str, detail: str = "") -> str:
+    is_error = status == "ERROR"
+    heading = "Upstox Connection Failed" if is_error else "Upstox Connected"
+    color = "#ef4444" if is_error else "#10b981"
+    body_text = detail or "Authentication successful. You can close this window."
+    close_delay_ms = "3000" if is_error else "1000"
 
-    # In a real app, exchange code for access token here, and securely store it
-    # token_data = exchange_code(code)
-    # store_token(token_data)
-
-    # Render HTML page to postMessage back to original window
-    html_content = """
+    return f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Upstox Connected</title>
+        <title>{heading}</title>
         <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #09090b; color: #10b981; margin: 0; }
-            .container { text-align: center; border: 1px solid #27272a; padding: 2rem; border-radius: 8px; background: #18181b; }
-            h1 { margin-bottom: 1rem; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.05em; }
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #09090b; color: {color}; margin: 0; }}
+            .container {{ text-align: center; border: 1px solid #27272a; padding: 2rem; border-radius: 8px; background: #18181b; max-width: 480px; }}
+            h1 {{ margin-bottom: 1rem; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.05em; }}
+            p {{ color: #a1a1aa; }}
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>Upstox Connected</h1>
-            <p>Authentication successful. You can close this window.</p>
+            <h1>{heading}</h1>
+            <p>{body_text}</p>
         </div>
         <script>
-            // Safely notify the opener window
-            if (window.opener) {
-                const message = {
+            if (window.opener) {{
+                const message = {{
                     type: "BROKER_AUTH_COMPLETE",
                     broker: "UPSTOX",
-                    status: "CONNECTED"
-                };
+                    status: "{status}"
+                }};
                 window.opener.postMessage(message, window.location.origin);
-            } else {
+            }} else {{
                 console.warn("No opener window found.");
-            }
-
-            // Attempt to auto-close
-            setTimeout(() => {
-                window.close();
-            }, 1000);
+            }}
+            setTimeout(() => {{ window.close(); }}, {close_delay_ms});
         </script>
     </body>
     </html>
     """
-    return HTMLResponse(content=html_content)
+
+
+@router.get("/login")
+async def upstox_login():
+    return RedirectResponse(url=upstox_auth.get_authorization_url())
+
+
+@router.get("/callback")
+async def upstox_callback(code: str = Query(...), state: str = Query(None)):
+    logger.info("Received Upstox callback")
+
+    try:
+        token = await upstox_auth.exchange_code_for_token(code)
+    except upstox_auth.UpstoxAuthError as exc:
+        logger.error(f"Upstox token exchange failed: {exc}")
+        return HTMLResponse(content=_result_page("ERROR", str(exc)), status_code=502)
+
+    upstox_auth.save_token(token)
+    upstox_client.configure(token)
+    await upstox_client.connect()
+
+    return HTMLResponse(content=_result_page("CONNECTED"))
