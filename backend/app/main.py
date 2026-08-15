@@ -220,6 +220,9 @@ app.add_middleware(
 # ROUTERS
 # =============================================================
 
+# MUST stay registered before websocket_router: Starlette matches routes
+# first-registered-wins, and websocket_router's `/ws/{channel}` wildcard would
+# otherwise shadow `/ws/live-stream`. Do not reorder these two.
 app.include_router(
     live_stream_router
 )
