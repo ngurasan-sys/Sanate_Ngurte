@@ -39,10 +39,13 @@ class GapOpeningEngine:
         self.net_pcr: Dict[str, float] = {}
         self.oi_regime: Dict[str, str] = {}
 
-        # VIX Data
-        self.vix_1h_change_pct: float = 0.0
+        # VIX Data — no VIX_UPDATE publisher exists yet, so this stays
+        # unavailable (None) rather than defaulting to a fake 0.0 reading,
+        # which would misrepresent "no data" as "VIX flat".
+        self.vix_1h_change_pct: Optional[float] = None
         self.vix_override: bool = False
         self.current_vix: float = 0.0
+        self._vix_data_received: bool = False
 
     def start(self):
         event_bus.subscribe("MARKET_TICK", self.handle_tick)
@@ -411,7 +414,7 @@ class GapOpeningEngine:
             supertrend=self.indicators.get_supertrend(inst),
             daily_atr=self.indicators.get_atr(inst),
             atr_exhausted=False, # Re-calculate if needed in emit
-            vix_1h_change_pct=self.vix_1h_change_pct,
+            vix_1h_change_pct=(self.vix_1h_change_pct if self._vix_data_received else None),
             vix_override=self.vix_override,
             reason=reason,
             timestamp=dt
@@ -437,7 +440,9 @@ class GapOpeningEngine:
                     self.oi_regime[inst] = "CHOP"
 
     async def handle_vix(self, data: dict):
-        # Expected simulated VIX_UPDATE
+        # No publisher currently emits VIX_UPDATE (no live India VIX feed
+        # is wired up yet). If/when one is, this marks VIX data as real.
+        self._vix_data_received = True
         self.current_vix = data.get("current_vix", self.current_vix)
         vix_1h_ago = data.get("vix_1h_ago", self.current_vix)
 

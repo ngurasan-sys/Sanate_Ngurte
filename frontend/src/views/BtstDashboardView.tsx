@@ -6,15 +6,15 @@ interface BtstCasState {
   message: string;
   signal: string;
   deadline?: string;
-  pillar_macro: boolean;
-  pillar_micro: boolean;
-  pillar_cas: boolean;
-  futures_trend: string;
-  post_1pm_oi: {
+  pillar_macro?: boolean;
+  pillar_micro?: boolean;
+  pillar_cas?: boolean;
+  futures_trend?: string;
+  post_1pm_oi?: {
     call_oi_change: number;
     put_oi_change: number;
   };
-  cas_market_state: {
+  cas_market_state?: {
     equilibrium_price: number;
     day_high: number;
     day_low: number;
@@ -79,7 +79,25 @@ export const BtstDashboardView: React.FC = () => {
     );
   }
 
-  // Parse time manually from the mock "HH:MM:SS" since datetime objects in JS are annoying with just times
+  if (
+    data.status === 'INSUFFICIENT_DATA' ||
+    !data.cas_market_state ||
+    !data.post_1pm_oi ||
+    !data.futures_trend ||
+    data.pillar_macro === undefined ||
+    data.pillar_micro === undefined ||
+    data.pillar_cas === undefined
+  ) {
+    return (
+      <div className="flex items-center justify-center h-full text-zinc-400 font-sans p-6">
+        <div className="flex flex-col items-center gap-4 text-center max-w-md">
+          <p>{data.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Parse time from the "HH:MM:SS" string
   const timeStr = data.current_time_str;
   const isCasWindow = timeStr >= "15:15:00" && timeStr < "15:35:00";
   const isGoldenWindow = timeStr >= "15:35:00" && timeStr < "15:40:00";

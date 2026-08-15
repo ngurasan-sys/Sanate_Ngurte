@@ -11,8 +11,11 @@ class FuturesAnalyzer:
 
     @staticmethod
     def get_futures_state_summary(state: OIState) -> dict:
+        # Premium/discount to spot requires a spot price, which OIState
+        # (a single instrument's own state) does not carry. Report unknown
+        # rather than fabricating a fixed True.
         return {
             "price": state.current_price,
             "oi": state.current_oi,
-            "is_premium": True # stub
+            "is_premium": None
         }

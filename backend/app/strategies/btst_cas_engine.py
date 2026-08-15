@@ -100,25 +100,15 @@ class BTSTCASEngine:
     async def _run_loop(self):
         while self._running:
             try:
-                # In a real implementation, we would pull this from active memory stores, event bus snapshots, or DuckDB.
-                # For this mock module designed for realtime presentation, we emit mock/sample data.
-
-                # We will simulate data based on the current time just so the UI has something interesting to show.
-                now = datetime.now()
-
-                # Simulated Data
-                mock_futures_trend = "SHORT_BUILDUP"
-                mock_post_1pm_oi = {
-                    'call_oi_change': 3200000,
-                    'put_oi_change': -1500000
+                # No live futures OI trend, post-1PM OI delta, or CAS
+                # equilibrium price feed is wired up yet — report that
+                # honestly instead of publishing fabricated signal state.
+                result = {
+                    "status": "INSUFFICIENT_DATA",
+                    "message": "No live futures OI / post-1PM OI / CAS equilibrium data source is wired up yet.",
+                    "signal": "NONE",
+                    "current_time_str": datetime.now().time().strftime("%H:%M:%S"),
                 }
-                mock_cas_state = {
-                    'equilibrium_price': 24050,
-                    'day_high': 24300,
-                    'day_low': 24000
-                }
-
-                result = evaluate_btst_signal(mock_futures_trend, mock_post_1pm_oi, mock_cas_state)
 
                 # Emit via Event Bus
                 await event_bus.publish("btst_cas_stream", result)

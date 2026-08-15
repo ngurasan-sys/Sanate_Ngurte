@@ -5,9 +5,14 @@ class StrikeSelectionService:
     @staticmethod
     def select_strike(underlying: str, spot_price: float, direction: str) -> SelectedOption:
         """
-        Retrieves the exact instrument key for the target strike using Upstox instrument master data.
-        In this implementation, since a full Redis/DuckDB master is assumed to exist downstream,
-        we format the instrument key according to Upstox's standard NSE_FO format.
+        Computes the ATM strike and option type for the target setup.
+
+        NOTE: no Upstox instrument-master lookup is wired up yet, so the
+        real expiry date cannot be resolved here. `expiry` is returned as
+        the literal string "UNRESOLVED" and `instrument_key` deliberately
+        omits an expiry segment — it is NOT a valid, order-placeable Upstox
+        instrument key. Do not use this key for real order placement until
+        expiry resolution against the real instrument master is implemented.
         """
         step = 50
         if underlying == "BANKNIFTY":
@@ -24,10 +29,8 @@ class StrikeSelectionService:
             strike = atm_strike
             opt_type = "PE"
 
-        # Upstox Format: NSE_FO|NIFTY23NOV24000CE
-        # We will use a placeholder CURRENT_WEEK for the expiry string for now.
-        expiry = "CURRENT_WEEK"
-        instrument_key = f"NSE_FO|{underlying}{strike}{opt_type}"
+        expiry = "UNRESOLVED"
+        instrument_key = f"NSE_FO|{underlying}{strike}{opt_type}|EXPIRY_UNRESOLVED"
 
         return SelectedOption(
             instrument_key=instrument_key,
