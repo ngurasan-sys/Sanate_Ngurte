@@ -34,6 +34,7 @@ from backend.app.strategies.pullback_chop_filter.engine import pullback_chop_fil
 from backend.app.strategies.gap_opening.engine import gap_opening_engine
 from backend.app.strategies.expiry_reversal import expiry_reversal_engine
 from backend.app.strategies.expiry_engine import expiry_oi_tracker_engine
+from backend.app.strategies.option_analytics import option_analytics_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
 from backend.app.market_data.upstox_v3 import upstox_client
 from backend.app.core import upstox_auth
@@ -95,6 +96,7 @@ async def lifespan(app: FastAPI):
     gap_opening_engine.start()
     expiry_reversal_engine.start()
     expiry_oi_tracker_engine.start()
+    option_analytics_engine.start()
     market_breadth_engine.start()
 
     # Start Upstox stream — use a saved token if we have one, otherwise
@@ -176,6 +178,9 @@ async def lifespan(app: FastAPI):
 
         if hasattr(expiry_oi_tracker_engine, "stop"):
             expiry_oi_tracker_engine.stop()
+
+        if hasattr(option_analytics_engine, "stop"):
+            option_analytics_engine.stop()
 
         if hasattr(market_breadth_engine, "stop"):
             market_breadth_engine.stop()

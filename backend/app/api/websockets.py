@@ -29,7 +29,8 @@ class ConnectionManager:
             "pullback_chop": {},
             "market_breadth": {},
             "expiry_reversal": {},
-            "expiry_tracker": {}
+            "expiry_tracker": {},
+            "option_analytics": {}
         }
 
         # Subscribe to events from the event bus and forward to websocket
@@ -55,6 +56,7 @@ class ConnectionManager:
         event_bus.subscribe("expiry_reversal_signal", lambda e: self.broadcast("expiry_reversal", e))
         event_bus.subscribe("expiry_reversal_state", lambda e: self.broadcast("expiry_reversal", e))
         event_bus.subscribe("expiry_tracker", lambda e: self.broadcast("expiry_tracker", e))
+        event_bus.subscribe("option_analytics", lambda e: self.broadcast("option_analytics", e))
 
     def _publish_model_or_dict(self, channel: str, payload):
         try:
