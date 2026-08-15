@@ -59,6 +59,11 @@ class AsyncPersistenceWorker:
 
     async def run(self):
         logger.info("Starting Async Persistence Worker")
+        # Rebind the queue to whichever event loop is running this call.
+        # Reusing a Queue created under a previous (now-closed) event loop
+        # raises RuntimeError on every get(), which without this reset
+        # busy-loops the except-Exception branch below indefinitely.
+        self.queue = asyncio.Queue()
         batch = []
         while True:
             try:
@@ -77,6 +82,7 @@ class AsyncPersistenceWorker:
                 break
             except Exception as e:
                 logger.error(f"Error in persistence worker loop: {e}", exc_info=True)
+                await asyncio.sleep(self.flush_interval)
 
     async def _flush_batch(self, batch: List[Any]):
         if not batch:
