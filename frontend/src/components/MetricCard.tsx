@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 
 interface MetricCardProps {
   label: string;
@@ -7,7 +7,13 @@ interface MetricCardProps {
   subValueColor?: 'bullish' | 'bearish' | 'neutral' | 'muted';
 }
 
-export const MetricCard: React.FC<MetricCardProps> = ({
+/**
+ * ⚡ Bolt Optimization: Wrapped in React.memo()
+ * Impact: Prevents unnecessary re-renders of this heavily-used leaf component.
+ * Used >15 times per page refresh, this ensures React skips diffing this component
+ * unless its specific value props change.
+ */
+export const MetricCard: React.FC<MetricCardProps> = memo(({
   label,
   value,
   subValue,
@@ -41,6 +47,6 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       </div>
     </div>
   );
-};
+});
 
 export default MetricCard;

@@ -1,10 +1,16 @@
-import React from 'react';
+import React, { memo } from 'react';
 
 interface StatusBadgeProps {
   status: string;
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
+/**
+ * ⚡ Bolt Optimization: Wrapped in React.memo()
+ * Impact: Prevents unnecessary re-renders of this heavily-used leaf component.
+ * Since this component relies only on the primitive string 'status' prop, it can
+ * safely skip rendering when parent components update state unrelated to this badge.
+ */
+export const StatusBadge: React.FC<StatusBadgeProps> = memo(({ status }) => {
   const norm = status.toUpperCase();
 
   const isBullish =
@@ -49,6 +55,6 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
       {status}
     </span>
   );
-};
+});
 
 export default StatusBadge;
