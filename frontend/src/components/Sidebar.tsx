@@ -9,6 +9,7 @@ import {
   GitBranch,
   ShieldAlert,
   ArrowUpDown,
+  Power,
   BookOpen,
   Settings,
   HelpCircle,
@@ -19,7 +20,9 @@ import {
   ChevronRight,
   Sparkles,
   Link2,
-  Crosshair
+  Crosshair,
+  AlertTriangle,
+  Radar
 } from 'lucide-react';
 
 interface SidebarItemProps {
@@ -74,6 +77,8 @@ export const Sidebar: React.FC = () => {
     {
       section: 'STRATEGIES',
       items: [
+        { label: 'Expiry Day Reversal', icon: AlertTriangle, page: 'EXPIRY_REVERSAL' },
+        { label: 'OI Expiry Tracker', icon: Radar, page: 'EXPIRY_TRACKER' },
         { label: 'Gap Opening Strategies', icon: BookOpen, page: 'GAP_OPENING_STRATEGIES' },
         { label: '3 Minute Gap', icon: BookOpen, page: 'THREE_MINUTE_GAP' },
         { label: 'Strategy Monitor', icon: BookOpen, page: 'STRATEGY_MONITOR' },
@@ -99,11 +104,13 @@ export const Sidebar: React.FC = () => {
         { label: 'Orders', icon: FileText, page: 'ORDERS' },
         { label: 'P&L', icon: TrendingUp, page: 'PNL' },
         { label: 'Risk', icon: ShieldAlert, page: 'RISK' },
+        { label: 'Execution Control', icon: Power, page: 'EXECUTION_CONTROL' },
       ],
     },
     {
       section: 'BROKERAGE',
       items: [
+        { label: 'Broker Connections', icon: Link2, page: 'BROKER_CONNECTIONS' },
         { label: 'Upstox', icon: Link2, page: 'UPSTOX' },
       ],
     },

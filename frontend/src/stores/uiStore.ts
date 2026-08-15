@@ -33,7 +33,11 @@ export type NavigationPage =
   | 'STRADDLE'
   | 'INTRADAY_TREND_SCALPER'
   | 'MARKET_BREADTH'
-  | 'TWO_CANDLE';
+  | 'TWO_CANDLE'
+  | 'EXPIRY_REVERSAL'
+  | 'EXPIRY_TRACKER'
+  | 'EXECUTION_CONTROL'
+  | 'BROKER_CONNECTIONS';
 
 interface UIState {
   sidebarExpanded: boolean;

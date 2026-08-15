@@ -79,6 +79,43 @@ async def test_bullish_setup(engine):
     # Reset event bus before assertions if integration needed, but internal state tells us it worked.
 
 @pytest.mark.asyncio
+async def test_post_3pm_oi_update_is_ignored(engine):
+    # Pre-3PM: OI update should confirm bullish as normal.
+    await engine._handle_trending_oi({
+        "view": "spot_trending_oi",
+        "underlying": "NIFTY",
+        "row": {"time": "14:59:59", "directionPercent": 50.0, "strength": 30}
+    })
+    state = engine._get_instrument_state("NIFTY FUT")
+    assert state["bullish_oi_confirmed"] == True
+
+    # At/after 3PM: a strongly bearish OI reading (expiry square-off
+    # distortion) must NOT flip the already-confirmed bullish state.
+    await engine._handle_trending_oi({
+        "view": "spot_trending_oi",
+        "underlying": "NIFTY",
+        "row": {"time": "15:00:00", "directionPercent": -80.0, "strength": 90}
+    })
+    assert state["bullish_oi_confirmed"] == True
+    assert state["bearish_oi_confirmed"] == False
+    # diff_oi_pct/strength_dots also stay at their last pre-3PM values,
+    # since the post-3PM row is ignored entirely.
+    assert state["diff_oi_pct"] == 50.0
+
+@pytest.mark.asyncio
+async def test_pre_3pm_oi_update_still_applies_without_time_field(engine):
+    # Existing callers (and the old test payloads) that omit "time"
+    # entirely must keep working exactly as before — absence of a time
+    # field is not treated as "post-3PM".
+    await engine._handle_trending_oi({
+        "view": "spot_trending_oi",
+        "underlying": "NIFTY",
+        "row": {"directionPercent": 50.0, "strength": 30}
+    })
+    state = engine._get_instrument_state("NIFTY FUT")
+    assert state["bullish_oi_confirmed"] == True
+
+@pytest.mark.asyncio
 async def test_resistance_rejection_and_false_breakout(engine):
     engine.start()
 

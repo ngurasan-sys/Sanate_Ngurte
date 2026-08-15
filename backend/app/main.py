@@ -19,6 +19,9 @@ from backend.app.api.endpoints.order_flow import router as order_flow_router
 from backend.app.api.endpoints.levels import router as levels_router
 from backend.app.api.endpoints.broker import router as broker_router
 from backend.app.api.endpoints.algo import router as algo_router
+from backend.app.api.endpoints.live_stream import router as live_stream_router
+from backend.app.api.endpoints.execution_control import router as execution_control_router
+from backend.app.api.endpoints.brokers import router as brokers_router
 
 from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
@@ -30,6 +33,10 @@ from backend.app.strategies.intraday_trend_scalper.engine import intraday_trend_
 from backend.app.strategies.oh_ol import oh_ol_strategy
 from backend.app.strategies.straddle.straddle_engine import straddle_engine
 from backend.app.strategies.pullback_chop_filter.engine import pullback_chop_filter_engine
+from backend.app.strategies.gap_opening.engine import gap_opening_engine
+from backend.app.strategies.expiry_reversal import expiry_reversal_engine
+from backend.app.strategies.expiry_engine import expiry_oi_tracker_engine
+from backend.app.strategies.option_analytics import option_analytics_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
 from backend.app.market_data.upstox_v3 import upstox_client
 from backend.app.core import upstox_auth
@@ -88,6 +95,10 @@ async def lifespan(app: FastAPI):
     oh_ol_strategy.start()
     straddle_engine.start()
     pullback_chop_filter_engine.start()
+    gap_opening_engine.start()
+    expiry_reversal_engine.start()
+    expiry_oi_tracker_engine.start()
+    option_analytics_engine.start()
     market_breadth_engine.start()
 
     # Start Upstox stream — use a saved token if we have one, otherwise
@@ -161,6 +172,18 @@ async def lifespan(app: FastAPI):
         if hasattr(pullback_chop_filter_engine, "stop"):
             pullback_chop_filter_engine.stop()
 
+        if hasattr(gap_opening_engine, "stop"):
+            gap_opening_engine.stop()
+
+        if hasattr(expiry_reversal_engine, "stop"):
+            expiry_reversal_engine.stop()
+
+        if hasattr(expiry_oi_tracker_engine, "stop"):
+            expiry_oi_tracker_engine.stop()
+
+        if hasattr(option_analytics_engine, "stop"):
+            option_analytics_engine.stop()
+
         if hasattr(market_breadth_engine, "stop"):
             market_breadth_engine.stop()
 
@@ -214,6 +237,13 @@ app.add_middleware(
 # ROUTERS
 # =============================================================
 
+# MUST stay registered before websocket_router: Starlette matches routes
+# first-registered-wins, and websocket_router's `/ws/{channel}` wildcard would
+# otherwise shadow `/ws/live-stream`. Do not reorder these two.
+app.include_router(
+    live_stream_router
+)
+
 app.include_router(
     websocket_router
 )
@@ -232,6 +262,14 @@ app.include_router(
 
 app.include_router(
     algo_router
+)
+
+app.include_router(
+    execution_control_router
+)
+
+app.include_router(
+    brokers_router
 )
 
 

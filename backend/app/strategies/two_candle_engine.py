@@ -27,7 +27,7 @@ def evaluate_two_candle_setup(symbol: str, current_time_str: str, candle_data: l
                      c2['close'] > c2['vwma'])
 
     is_long_volume = c1['close'] > c1['open'] and c2['close'] > c2['open'] # Both Green
-    is_long_rsi = c2['rsi'] < 80
+    is_long_rsi = 20 <= c2['rsi'] <= 80
     is_long_oi = oi_data.get('trend') == "LONG_BUILDUP"
 
     if is_long_price and is_long_volume and is_long_rsi and is_long_oi:
@@ -45,7 +45,7 @@ def evaluate_two_candle_setup(symbol: str, current_time_str: str, candle_data: l
                       c2['close'] < c2['vwma'])
 
     is_short_volume = c1['close'] < c1['open'] and c2['close'] < c2['open'] # Both Red
-    is_short_rsi = c2['rsi'] > 20
+    is_short_rsi = 20 <= c2['rsi'] <= 80
     is_short_oi = oi_data.get('trend') == "SHORT_BUILDUP"
 
     if is_short_price and is_short_volume and is_short_rsi and is_short_oi:

@@ -33,6 +33,10 @@ import { IntradayTrendScalperView } from './views/IntradayTrendScalperView';
 import { PullbackChopFilterView } from './views/PullbackChopFilterView';
 import MarketBreadthPage from './components/breadth/MarketBreadthPage';
 import { TwoCandleView } from './views/TwoCandleView';
+import { ExpiryReversalView } from './views/ExpiryReversalView';
+import { ExpiryTracker } from './components/expiry/ExpiryTracker';
+import { ExecutionControlView } from './views/ExecutionControlView';
+import { BrokerConnectionsView } from './views/BrokerConnectionsView';
 
 import { Activity, BarChart2, ShieldAlert, Wifi } from 'lucide-react';
 
@@ -116,6 +120,18 @@ export const App: React.FC = () => {
 
       case 'TWO_CANDLE':
         return <TwoCandleView />;
+
+      case 'EXPIRY_REVERSAL':
+        return <ExpiryReversalView />;
+
+      case 'EXPIRY_TRACKER':
+        return <ExpiryTracker />;
+
+      case 'EXECUTION_CONTROL':
+        return <ExecutionControlView />;
+
+      case 'BROKER_CONNECTIONS':
+        return <BrokerConnectionsView />;
 
       case 'DASHBOARD':
         return (

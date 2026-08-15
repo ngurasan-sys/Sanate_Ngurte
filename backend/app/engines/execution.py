@@ -3,75 +3,93 @@ from datetime import datetime
 from typing import Any, Dict
 
 from backend.app.core.event_bus import event_bus
-
+from backend.app.execution.order_gateway import (
+    ExecutionMode,
+    OrderRequest,
+    order_gateway,
+    resolve_mode,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ExecutionEngine:
+    """The execution boundary — the only consumer of EXECUTION_REQUEST.
+
+    This now actually calls the broker via OrderGateway, but the gateway
+    defaults to DRY_RUN: nothing reaches a real broker unless the
+    execution mode has been deliberately configured (see order_gateway
+    for the two-switch LIVE arming).
+
+    It never claims an order was submitted unless the broker returned a
+    real order_id.
+    """
+
     def __init__(self):
         self._started = False
 
     def start(self) -> None:
-        """
-        Start the execution engine and subscribe to
-        approved execution requests.
-        """
-
         if self._started:
             return
-
-        event_bus.subscribe(
-            "EXECUTION_REQUEST",
-            self.execute_order,
-        )
-
+        event_bus.subscribe("EXECUTION_REQUEST", self.execute_order)
         self._started = True
+        logger.info("Execution engine started (mode: %s).", resolve_mode().value)
 
-        logger.info("Execution engine started.")
+    def stop(self) -> None:
+        self._started = False
+        logger.info("Execution engine stopped.")
 
-    async def execute_order(
-        self,
-        req_data: Dict[str, Any],
-    ) -> None:
-        """
-        Process an approved execution request.
-
-        This layer currently represents the execution boundary.
-        It must not claim an order was filled unless an actual
-        broker execution confirmation is received.
-        """
-
-        mode = req_data.get("execution_mode", "DATA_ONLY")
-
+    async def execute_order(self, req_data: Dict[str, Any]) -> None:
         instrument = req_data.get("instrument")
+        instrument_token = req_data.get("instrument_token")
         decision_id = req_data.get("decision_id")
-        action = req_data.get("action")
+        quantity = int(req_data.get("quantity", 0) or 0)
 
-        logger.info(
-            "Execution request received for %s (Mode: %s)",
-            instrument, mode
+        if not instrument_token:
+            detail = (
+                f"No instrument_token on the execution request for {instrument!r} — "
+                "cannot place an order without the broker's instrument key."
+            )
+            logger.error(detail)
+            await self._publish_update(
+                instrument, decision_id, "REJECTED", resolve_mode(), detail=detail,
+            )
+            return
+
+        request = OrderRequest(
+            instrument_token=instrument_token,
+            transaction_type=req_data.get("transaction_type", "BUY"),
+            quantity=quantity,
+            order_type=req_data.get("order_type", "MARKET"),
+            product=req_data.get("product", "I"),
+            price=float(req_data.get("price", 0.0) or 0.0),
+            tag=f"dec_{decision_id}" if decision_id else None,
         )
 
-        status = "SUBMITTED"
-        if mode == "DATA_ONLY":
-            status = "DATA_ONLY"
-        elif mode == "PAPER":
-            status = "PAPER_SUBMITTED"
+        result = await order_gateway.place_order(request)
 
-        result = {
+        await self._publish_update(
+            instrument,
+            decision_id,
+            result.status,
+            result.mode,
+            order_id=result.order_id,
+            detail=result.detail,
+        )
+
+    async def _publish_update(
+        self, instrument, decision_id, status: str, mode: ExecutionMode,
+        order_id=None, detail=None,
+    ) -> None:
+        await event_bus.publish("EXECUTION_UPDATE", {
             "instrument": instrument,
-            "status": status,
-            "action": action,
-            "timestamp": datetime.now(),
             "decision_id": decision_id,
-            "mode": mode,
-        }
-
-        await event_bus.publish(
-            "EXECUTION_UPDATE",
-            result,
-        )
+            "status": status,
+            "mode": mode.value,
+            "order_id": order_id,
+            "detail": detail,
+            "timestamp": datetime.now().isoformat(),
+        })
 
 
 execution_engine = ExecutionEngine()

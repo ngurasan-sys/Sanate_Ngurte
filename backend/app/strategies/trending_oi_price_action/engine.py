@@ -399,6 +399,20 @@ class TrendingOIPriceActionStrategy:
 
         row = data.get("row", {})
 
+        # Ignore OI updates at/after 3:00 PM: near-expiry positioning
+        # causes large, non-directional OI swings (square-off) that would
+        # otherwise look like a genuine trend confirmation or reversal.
+        # Existing confirmed state (bullish/bearish_oi_confirmed) is left
+        # untouched rather than reset, so an already-held position's exit
+        # logic keeps using its last trustworthy reading.
+        row_time_str = row.get("time")
+        if row_time_str:
+            try:
+                if datetime.strptime(row_time_str, "%H:%M:%S").time() >= time(15, 0):
+                    return
+            except ValueError:
+                pass
+
         # Determine base instrument. Since spot_trending_oi usually has NIFTY/BANKNIFTY under 'underlying'
         underlying = data.get("underlying", "NIFTY")
         instrument = f"{underlying} FUT" # Map to FUT since our state works off Futures

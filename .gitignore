@@ -95,6 +95,8 @@ dist-ssr/
 .env.*
 !.env.example
 backend/.token.json
+backend/.credential_key
+backend/.broker_credentials.json
 *.local
 
 

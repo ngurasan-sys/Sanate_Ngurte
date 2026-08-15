@@ -86,7 +86,7 @@ class StrategySignal(BaseModel):
     supertrend: float
     daily_atr: float
     atr_exhausted: bool
-    vix_1h_change_pct: float
+    vix_1h_change_pct: Optional[float]
     vix_override: bool
     reason: str
     timestamp: datetime

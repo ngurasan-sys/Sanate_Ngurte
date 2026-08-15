@@ -73,32 +73,15 @@ class MarketBreadthEngine:
     async def _worker(self):
         while self.running:
             try:
-                # Simulate calculating 60-minute OI interpretation for top 6 Bank Nifty heavyweights
-                heavyweight_sync = {
-                    "HDFCBANK": {"status": "LONG_BUILDUP", "oi_chg": "+2.4%"},
-                    "ICICIBANK": {"status": "LONG_BUILDUP", "oi_chg": "+1.8%"},
-                    "SBIN": {"status": "SHORT_COVERING", "oi_chg": "-0.9%"},
-                    "AXISBANK": {"status": "SHORT_BUILDUP", "oi_chg": "+1.2%"},
-                    "KOTAKBANK": {"status": "LONG_UNWINDING", "oi_chg": "-1.5%"},
-                    "INDUSINDBK": {"status": "LONG_BUILDUP", "oi_chg": "+0.8%"},
-                }
-
-                # Mock dummy EOD Data
-                dummy_daily_data = [
-                    {'cas_close': 100, 'prev_cas_close': 95, 'total_oi': 1000, 'prev_total_oi': 900},  # LONG_BUILDUP
-                    {'cas_close': 105, 'prev_cas_close': 100, 'total_oi': 1100, 'prev_total_oi': 1000}, # LONG_BUILDUP
-                    {'cas_close': 110, 'prev_cas_close': 105, 'total_oi': 1200, 'prev_total_oi': 1100}, # LONG_BUILDUP
-                    {'cas_close': 115, 'prev_cas_close': 110, 'total_oi': 1300, 'prev_total_oi': 1200}, # LONG_BUILDUP
-                    {'cas_close': 120, 'prev_cas_close': 115, 'total_oi': 1400, 'prev_total_oi': 1300}, # LONG_BUILDUP
-                ]
-
-                macro_trend = calculate_eod_macro_trend(dummy_daily_data)
-
+                # No live breadth data source is wired up yet (this would
+                # need real EOD CAS close/OI data). Report that honestly
+                # instead of publishing fabricated numbers. Note: this
+                # deliberately does not track individual-stock OI — no
+                # stock futures are used anywhere in this project.
                 payload = {
                     "index": "BANKNIFTY",
-                    "advance_decline": {"adv": 37, "dec": 13},
-                    "heavyweight_sync": heavyweight_sync,
-                    "macro_trend": macro_trend
+                    "sufficient_data": False,
+                    "reason": "No live per-stock OI/breadth data source is wired up yet.",
                 }
 
                 import json
