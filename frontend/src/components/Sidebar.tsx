@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Sparkles,
   Link2,
-  Crosshair
+  Crosshair,
+  AlertTriangle
 } from 'lucide-react';
 
 interface SidebarItemProps {
@@ -74,6 +75,7 @@ export const Sidebar: React.FC = () => {
     {
       section: 'STRATEGIES',
       items: [
+        { label: 'Expiry Day Reversal', icon: AlertTriangle, page: 'EXPIRY_REVERSAL' },
         { label: 'Gap Opening Strategies', icon: BookOpen, page: 'GAP_OPENING_STRATEGIES' },
         { label: '3 Minute Gap', icon: BookOpen, page: 'THREE_MINUTE_GAP' },
         { label: 'Strategy Monitor', icon: BookOpen, page: 'STRATEGY_MONITOR' },
