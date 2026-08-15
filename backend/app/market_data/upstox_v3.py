@@ -5,10 +5,19 @@ import ssl
 from typing import Dict, Any, Callable
 from datetime import datetime
 
-from upstox_client.api_client import ApiClient
-from upstox_client.feeder.market_data_streamer_v3 import MarketDataStreamerV3
+try:
+    from upstox_client.api_client import ApiClient
+    from upstox_client.configuration import Configuration
+    from upstox_client.feeder.market_data_streamer_v3 import MarketDataStreamerV3
+    UPSTOX_AVAILABLE = True
+except ImportError:
+    UPSTOX_AVAILABLE = False
+    ApiClient = None
+    Configuration = None
+    MarketDataStreamerV3 = None
 
 from .models import Tick
+from .symbols import INDEX_INSTRUMENT_KEYS
 from backend.app.core.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
@@ -16,14 +25,43 @@ logger = logging.getLogger(__name__)
 class UpstoxV3Client:
     def __init__(self, api_client: ApiClient = None, instrument_keys=None):
         self.api_client = api_client
-        self.streamer = MarketDataStreamerV3(self.api_client, instrument_keys or []) if api_client else None
         self.subscriptions = set(instrument_keys) if instrument_keys else set()
+        if UPSTOX_AVAILABLE and api_client:
+            self.streamer = MarketDataStreamerV3(self.api_client, instrument_keys or [])
+            self._wire_handlers()
+        else:
+            self.streamer = None
+
+    def _wire_handlers(self):
+        self.streamer.on("message", self._on_message)
+        self.streamer.on("open", self._on_open)
+        self.streamer.on("close", self._on_close)
+        self.streamer.on("error", self._on_error)
+
+    def configure(self, access_token: str) -> None:
+        """Switch from mock mode into a real live-feed client using a real
+        OAuth access token. Safe to call again later (e.g. after a fresh
+        login replaces an expired token) — closes any existing streamer
+        first."""
+        if not UPSTOX_AVAILABLE:
+            logger.warning(
+                "upstox_client SDK not installed; cannot configure a live feed"
+            )
+            return
 
         if self.streamer:
-            self.streamer.on("message", self._on_message)
-            self.streamer.on("open", self._on_open)
-            self.streamer.on("close", self._on_close)
-            self.streamer.on("error", self._on_error)
+            try:
+                self.streamer.close()
+            except Exception:
+                pass
+
+        configuration = Configuration()
+        configuration.access_token = access_token
+        self.api_client = ApiClient(configuration)
+        self.streamer = MarketDataStreamerV3(
+            self.api_client, list(self.subscriptions)
+        )
+        self._wire_handlers()
 
     async def connect(self):
         if self.streamer:
@@ -83,3 +121,8 @@ class UpstoxV3Client:
     async def close(self):
         if self.streamer:
             self.streamer.close()
+
+
+# Module-level singleton — lives here (not main.py) so broker.py can import
+# it without a circular import (main.py imports broker.py's router).
+upstox_client = UpstoxV3Client(instrument_keys=list(INDEX_INSTRUMENT_KEYS.values()))
