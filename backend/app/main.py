@@ -1,6 +1,14 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load backend/.env BEFORE importing anything that reads env vars at import
+# time. The explicit path matters: the app is launched with the repo root as
+# CWD, so a bare load_dotenv() would search the wrong directory.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

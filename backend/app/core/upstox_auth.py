@@ -17,6 +17,18 @@ class UpstoxAuthError(Exception):
     """Raised when the Upstox OAuth flow fails."""
 
 
+def _require_env(name: str) -> str:
+    """Read a required Upstox credential from the environment, failing with a
+    clear, actionable message instead of a bare KeyError."""
+    value = os.environ.get(name)
+    if value is None:
+        raise UpstoxAuthError(
+            f"{name} not set — copy backend/.env.example to backend/.env "
+            "and fill in your credentials"
+        )
+    return value
+
+
 def save_token(access_token: str) -> None:
     TOKEN_PATH.write_text(
         json.dumps(
@@ -24,7 +36,8 @@ def save_token(access_token: str) -> None:
                 "access_token": access_token,
                 "obtained_at": datetime.now(timezone.utc).isoformat(),
             }
-        )
+        ),
+        encoding="utf-8",
     )
 
 
@@ -32,7 +45,7 @@ def load_token() -> Optional[str]:
     if not TOKEN_PATH.exists():
         return None
     try:
-        data = json.loads(TOKEN_PATH.read_text())
+        data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
     return data.get("access_token")
@@ -44,23 +57,27 @@ TOKEN_URL = "https://api.upstox.com/v2/login/authorization/token"
 
 def get_authorization_url() -> str:
     params = {
-        "client_id": os.environ["UPSTOX_API_KEY"],
-        "redirect_uri": os.environ["UPSTOX_REDIRECT_URI"],
+        "client_id": _require_env("UPSTOX_API_KEY"),
+        "redirect_uri": _require_env("UPSTOX_REDIRECT_URI"),
         "response_type": "code",
     }
     return f"{AUTHORIZE_URL}?{urlencode(params)}"
 
 
 async def exchange_code_for_token(code: str) -> str:
+    client_id = _require_env("UPSTOX_API_KEY")
+    client_secret = _require_env("UPSTOX_API_SECRET")
+    redirect_uri = _require_env("UPSTOX_REDIRECT_URI")
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 TOKEN_URL,
                 data={
                     "code": code,
-                    "client_id": os.environ["UPSTOX_API_KEY"],
-                    "client_secret": os.environ["UPSTOX_API_SECRET"],
-                    "redirect_uri": os.environ["UPSTOX_REDIRECT_URI"],
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": redirect_uri,
                     "grant_type": "authorization_code",
                 },
                 headers={

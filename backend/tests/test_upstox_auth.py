@@ -33,6 +33,29 @@ def test_load_token_returns_none_for_malformed_file(tmp_path, monkeypatch):
     assert upstox_auth.load_token() is None
 
 
+def test_get_authorization_url_raises_clear_error_when_env_missing(monkeypatch):
+    monkeypatch.delenv("UPSTOX_API_KEY", raising=False)
+    monkeypatch.delenv("UPSTOX_REDIRECT_URI", raising=False)
+
+    with pytest.raises(upstox_auth.UpstoxAuthError) as excinfo:
+        upstox_auth.get_authorization_url()
+
+    assert "UPSTOX_API_KEY not set" in str(excinfo.value)
+    assert "backend/.env" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_exchange_code_for_token_raises_clear_error_when_env_missing(monkeypatch):
+    monkeypatch.delenv("UPSTOX_API_KEY", raising=False)
+    monkeypatch.delenv("UPSTOX_API_SECRET", raising=False)
+    monkeypatch.delenv("UPSTOX_REDIRECT_URI", raising=False)
+
+    with pytest.raises(upstox_auth.UpstoxAuthError) as excinfo:
+        await upstox_auth.exchange_code_for_token("some-code")
+
+    assert "UPSTOX_API_KEY not set" in str(excinfo.value)
+
+
 def test_get_authorization_url_uses_env_vars(monkeypatch):
     monkeypatch.setenv("UPSTOX_API_KEY", "my-client-id")
     monkeypatch.setenv("UPSTOX_REDIRECT_URI", "http://localhost:8000/callback")
