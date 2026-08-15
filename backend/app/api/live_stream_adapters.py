@@ -1,9 +1,19 @@
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 RiskStatus = List[Dict[str, Any]]
 ActiveStrategyPayload = Dict[str, Any]
 
 _NON_SERIALIZABLE_STATE_KEYS = ("supertrend", "daily_atr")
+
+
+def _sanitize_json_value(value: Any) -> Any:
+    """Replace non-finite floats (inf/-inf/nan) with None so the result is
+    safe to pass through strict JSON serializers (e.g. Starlette's
+    JSONResponse, which sets allow_nan=False)."""
+    if isinstance(value, float) and (math.isinf(value) or math.isnan(value)):
+        return None
+    return value
 
 
 def adapt_trending_oi_price_action(state: Dict[str, Any]) -> Tuple[RiskStatus, ActiveStrategyPayload]:
@@ -25,7 +35,7 @@ def adapt_trending_oi_price_action(state: Dict[str, Any]) -> Tuple[RiskStatus, A
     ]
 
     active_strategy_payload = {
-        key: value
+        key: _sanitize_json_value(value)
         for key, value in state.items()
         if key not in _NON_SERIALIZABLE_STATE_KEYS
     }

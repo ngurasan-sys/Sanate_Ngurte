@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from backend.app.api.live_stream_adapters import (
@@ -112,6 +113,56 @@ def test_adapt_oh_ol_both_pillars_pass():
     assert risk_status[0]["rejection_reason"] is None
     assert risk_status[1]["passed"] is True
     assert risk_status[1]["rejection_reason"] is None
+
+
+def test_adapt_trending_oi_price_action_sanitizes_inf_defaults():
+    # Mirrors the REAL defaults set by _get_instrument_state
+    # (backend/app/strategies/trending_oi_price_action/engine.py:42-71), i.e.
+    # the exact state that exists at/near market open before the first
+    # candle is processed.
+    state = {
+        "position_state": "WAITING",
+        "avg_entry_price": 0.0,
+        "lots_held": 0,
+        "resistance_rejections": 0,
+        "resistance_level": None,
+        "false_breakout": False,
+        "last_swing_high": None,
+        "current_sl": 0.0,
+        "indicator_distance": 0.0,
+        "bullish_oi_confirmed": False,
+        "bearish_oi_confirmed": False,
+        "diff_oi_pct": 0.0,
+        "strength_dots": 0,
+        "last_vwap": 0.0,
+        "supertrend": object(),
+        "daily_atr": object(),
+        "current_day_high": -float("inf"),
+        "current_day_low": float("inf"),
+        "current_day_str": "",
+        "trade_valid": True,
+        "rejection_reason": "",
+        "time_filter_status": "VALID",
+        "distance_filter_status": "VALID",
+        "vwap_supertrend_distance": 0.0,
+        "tier_1_status": "PENDING",
+        "tier_2_status": "PENDING",
+        "tier_3_status": "PENDING",
+        "partial_exit_done": False,
+        "breakeven_done": False,
+    }
+
+    risk_status, payload = adapt_trending_oi_price_action(state)
+
+    assert payload["current_day_high"] is None
+    assert payload["current_day_low"] is None
+    assert "supertrend" not in payload
+    assert "daily_atr" not in payload
+
+    serialized = json.dumps(payload)
+    assert "Infinity" not in serialized
+    assert json.loads(serialized)["current_day_high"] is None
+    assert json.loads(serialized)["current_day_low"] is None
 
 
 def test_adapt_oh_ol_ignores_consumed_or_inactive_targets():
