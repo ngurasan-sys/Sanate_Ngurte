@@ -94,6 +94,7 @@ dist-ssr/
 .env
 .env.*
 !.env.example
+backend/.token.json
 *.local
 
 
