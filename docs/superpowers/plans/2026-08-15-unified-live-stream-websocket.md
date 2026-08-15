@@ -16,7 +16,7 @@
 - `atr_progress_pct` reports `null`, never `0`, when the underlying ATR isn't computable yet (fewer than the needed daily candles) — `0` would misrepresent "not yet computable" as "no range used".
 - Unknown `strategy` query value closes the connection at accept time (code 1003) rather than silently defaulting.
 - No test may depend on real wall-clock time or a live market feed — session-phase tests pass a `time` object directly; adapter tests feed synthetic engine state; the endpoint test only asserts payload shape, not specific values.
-- **Newly discovered during planning (not in the original design doc):** `backend/app/strategies/gap_opening/engine.py`'s `GapOpeningEngine` is never instantiated as a running singleton anywhere in `main.py` — nothing wires it into the app today. The design doc's "`regime` from `gap_opening/engine.py`'s `oi_regime` dict... else `UNKNOWN`" therefore always takes the `UNKNOWN` branch right now. This plan implements exactly that already-planned fallback; it does not attempt to wire up `GapOpeningEngine` (out of scope for this plan).
+- **Update, superseding the "newly discovered" note this plan originally had:** `gap_opening_engine` (the module-level singleton in `backend/app/strategies/gap_opening/engine.py`) is now wired into `main.py`'s lifespan (started/stopped alongside every other engine) as of commit `07ae4f8`. Its `oi_regime: Dict[str, str]` dict is therefore real, live-updating state — Task 3 reads `regime` from it directly instead of hardcoding `"UNKNOWN"`.
 
 ---
 
@@ -376,7 +376,7 @@ git commit -m "feat: add risk_status adapters for trending_oi_price_action and o
 - Test: `backend/tests/test_live_stream_endpoint.py`
 
 **Interfaces:**
-- Consumes: `compute_session_phase` (Task 1), `adapt_trending_oi_price_action`/`adapt_oh_ol` (Task 2), `trending_oi_pa_engine` singleton (`backend.app.strategies.trending_oi_price_action.engine`), `oh_ol_strategy` singleton (`backend.app.strategies.oh_ol`, re-exported from `backend/app/strategies/oh_ol/__init__.py`).
+- Consumes: `compute_session_phase` (Task 1), `adapt_trending_oi_price_action`/`adapt_oh_ol` (Task 2), `trending_oi_pa_engine` singleton (`backend.app.strategies.trending_oi_price_action.engine`), `oh_ol_strategy` singleton (`backend.app.strategies.oh_ol`, re-exported from `backend/app/strategies/oh_ol/__init__.py`), `gap_opening_engine.oi_regime: Dict[str, str]` singleton (`backend.app.strategies.gap_opening.engine`, keyed by bare underlying e.g. `"NIFTY"`, populated by `handle_trending_oi` — wired into `main.py`'s lifespan as of commit `07ae4f8`).
 - Produces: `router: APIRouter` with the `/ws/live-stream` route, registered in `main.py`. No later task depends on this.
 
 - [ ] **Step 1: Write the failing tests**
@@ -446,6 +446,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from backend.app.api.live_stream_adapters import adapt_oh_ol, adapt_trending_oi_price_action
 from backend.app.api.session_phase import compute_session_phase
+from backend.app.strategies.gap_opening.engine import gap_opening_engine
 from backend.app.strategies.oh_ol import oh_ol_strategy
 from backend.app.strategies.trending_oi_price_action.engine import trending_oi_pa_engine
 
@@ -478,11 +479,14 @@ def _build_payload(strategy: str, instrument: str) -> dict:
     active_strategy_payload: dict = {}
     diff_oi_pct: Optional[float] = None
     atr_progress_pct: Optional[float] = None
-    # gap_opening.engine.GapOpeningEngine is not wired into main.py as a
-    # running singleton anywhere in this codebase today, so there is no
-    # live per-instrument regime classification to read. Report unknown
-    # honestly rather than fabricating a value.
-    regime = "UNKNOWN"
+    # gap_opening_engine.oi_regime is keyed by bare underlying ("NIFTY"),
+    # not the " FUT"-suffixed instrument keys trending_oi_price_action
+    # uses internally — normalize before lookup. Reports "UNKNOWN" only
+    # when that underlying genuinely has no OI regime classification yet
+    # (e.g. before the first trending_oi tick of the day), not as a
+    # permanent placeholder.
+    underlying = instrument.replace(" FUT", "")
+    regime = gap_opening_engine.oi_regime.get(underlying, "UNKNOWN")
 
     if strategy == "trending_oi_price_action":
         state = trending_oi_pa_engine.positions.get(instrument)
