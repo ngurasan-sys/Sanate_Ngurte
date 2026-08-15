@@ -54,6 +54,12 @@ class GapOpeningEngine:
         event_bus.subscribe("VIX_UPDATE", self.handle_vix)
         logger.info("Gap Opening Strategies Engine started")
 
+    def stop(self):
+        # event_bus has no per-callback unsubscribe; subscriptions are
+        # cleaned up implicitly when event_bus.stop() cancels all worker
+        # tasks during app shutdown. Nothing else to release here.
+        logger.info("Gap Opening Strategies Engine stopped")
+
     def _get_time_ist(self, dt: datetime) -> datetime:
         if dt.tzinfo is None:
             return IST.localize(dt)
@@ -455,3 +461,6 @@ class GapOpeningEngine:
             self.vix_override = True
         else:
             self.vix_override = False
+
+
+gap_opening_engine = GapOpeningEngine()

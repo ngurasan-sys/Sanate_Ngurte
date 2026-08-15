@@ -30,6 +30,7 @@ from backend.app.strategies.intraday_trend_scalper.engine import intraday_trend_
 from backend.app.strategies.oh_ol import oh_ol_strategy
 from backend.app.strategies.straddle.straddle_engine import straddle_engine
 from backend.app.strategies.pullback_chop_filter.engine import pullback_chop_filter_engine
+from backend.app.strategies.gap_opening.engine import gap_opening_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
 from backend.app.market_data.upstox_v3 import upstox_client
 from backend.app.core import upstox_auth
@@ -88,6 +89,7 @@ async def lifespan(app: FastAPI):
     oh_ol_strategy.start()
     straddle_engine.start()
     pullback_chop_filter_engine.start()
+    gap_opening_engine.start()
     market_breadth_engine.start()
 
     # Start Upstox stream — use a saved token if we have one, otherwise
@@ -160,6 +162,9 @@ async def lifespan(app: FastAPI):
 
         if hasattr(pullback_chop_filter_engine, "stop"):
             pullback_chop_filter_engine.stop()
+
+        if hasattr(gap_opening_engine, "stop"):
+            gap_opening_engine.stop()
 
         if hasattr(market_breadth_engine, "stop"):
             market_breadth_engine.stop()
