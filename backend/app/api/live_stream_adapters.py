@@ -8,29 +8,57 @@ _NON_SERIALIZABLE_STATE_KEYS = ("supertrend", "daily_atr")
 
 
 def _sanitize_json_value(value: Any) -> Any:
-    """Replace non-finite floats (inf/-inf/nan) with None so the result is
-    safe to pass through strict JSON serializers (e.g. Starlette's
-    JSONResponse, which sets allow_nan=False)."""
+    """Replace non-finite floats (inf/-inf/nan) with None.
+
+    The websocket transport (``websocket.send_json`` -> Starlette) serializes
+    with ``allow_nan=True``, so a non-finite float does NOT raise here: it is
+    emitted as the bare literal ``Infinity`` / ``-Infinity`` / ``NaN``. Those
+    are not valid JSON, so a browser/JS client's ``JSON.parse`` rejects the
+    entire frame outright — a silent, total loss of the message rather than a
+    server-side error we would see. Sanitizing keeps every frame parseable.
+    """
     if isinstance(value, float) and (math.isinf(value) or math.isnan(value)):
         return None
     return value
 
 
+def sanitize_payload(value: Any) -> Any:
+    """Recursively apply :func:`_sanitize_json_value` across a whole payload.
+
+    Applied once at the real JSON boundary (the assembled payload just before
+    it is sent) so no individual field-computation site has to remember to
+    sanitize itself.
+    """
+    if isinstance(value, dict):
+        return {key: sanitize_payload(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [sanitize_payload(item) for item in value]
+    return _sanitize_json_value(value)
+
+
+# The engine keeps a single shared `rejection_reason` field, and the distance
+# filter only overwrites it while `trade_valid` is still True. So when the time
+# filter has already blocked, a subsequently-blocked distance filter carries the
+# TIME_FILTER's text — attributing a wrong reason to the distance pillar. Each
+# pillar therefore reports its own static, pillar-specific reason instead.
+_TIME_FILTER_REASON = "Outside valid trading time window"
+_DISTANCE_FILTER_REASON = "VWAP/SuperTrend distance exceeds threshold"
+
+
 def adapt_trending_oi_price_action(state: Dict[str, Any]) -> Tuple[RiskStatus, ActiveStrategyPayload]:
     time_valid = state.get("time_filter_status") == "VALID"
     distance_valid = state.get("distance_filter_status") == "VALID"
-    rejection_reason = state.get("rejection_reason") or None
 
     risk_status: RiskStatus = [
         {
             "name": "TIME_FILTER",
             "passed": time_valid,
-            "rejection_reason": None if time_valid else rejection_reason,
+            "rejection_reason": None if time_valid else _TIME_FILTER_REASON,
         },
         {
             "name": "DISTANCE_FILTER",
             "passed": distance_valid,
-            "rejection_reason": None if distance_valid else rejection_reason,
+            "rejection_reason": None if distance_valid else _DISTANCE_FILTER_REASON,
         },
     ]
 
