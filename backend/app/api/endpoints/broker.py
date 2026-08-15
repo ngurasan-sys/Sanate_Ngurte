@@ -1,3 +1,4 @@
+import html
 import logging
 from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,7 +15,9 @@ def _result_page(status: str, detail: str = "") -> str:
     is_error = status == "ERROR"
     heading = "Upstox Connection Failed" if is_error else "Upstox Connected"
     color = "#ef4444" if is_error else "#10b981"
-    body_text = detail or "Authentication successful. You can close this window."
+    body_text = html.escape(
+        detail or "Authentication successful. You can close this window."
+    )
     close_delay_ms = "3000" if is_error else "1000"
 
     return f"""
@@ -64,12 +67,32 @@ async def upstox_callback(code: str = Query(...), state: str = Query(None)):
 
     try:
         token = await upstox_auth.exchange_code_for_token(code)
+        upstox_auth.save_token(token)
+        configured = upstox_client.configure(token)
+        await upstox_client.connect()
     except upstox_auth.UpstoxAuthError as exc:
         logger.error(f"Upstox token exchange failed: {exc}")
         return HTMLResponse(content=_result_page("ERROR", str(exc)), status_code=502)
+    except Exception:
+        # Anything else (token file write, SDK construction, socket setup) is
+        # an internal failure — log the detail, don't leak it to the browser.
+        logger.exception("Upstox connection setup failed")
+        return HTMLResponse(
+            content=_result_page(
+                "ERROR", "Failed to complete Upstox connection setup"
+            ),
+            status_code=500,
+        )
 
-    upstox_auth.save_token(token)
-    upstox_client.configure(token)
-    await upstox_client.connect()
+    if not configured:
+        # The token really was saved, so this isn't a failure — but claiming a
+        # live feed when we're still in mock mode would be dishonest.
+        return HTMLResponse(
+            content=_result_page(
+                "CONNECTED",
+                "Token saved, but the Upstox SDK isn't installed — "
+                "running in mock mode.",
+            )
+        )
 
     return HTMLResponse(content=_result_page("CONNECTED"))

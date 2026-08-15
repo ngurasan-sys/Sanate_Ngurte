@@ -58,3 +58,64 @@ def test_callback_failure_renders_error_page():
 
         assert response.status_code == 502
         assert "Upstox Connection Failed" in response.text
+
+
+def test_callback_save_token_failure_renders_generic_error_page():
+    """save_token/configure/connect are inside the try block too, so an OSError
+    there renders the app's error page instead of a raw 500 traceback — and
+    must not leak the internal exception text to the browser."""
+    with patch(
+        "backend.app.api.endpoints.broker.upstox_auth.exchange_code_for_token",
+        new=AsyncMock(return_value="live-token-xyz"),
+    ), patch(
+        "backend.app.api.endpoints.broker.upstox_auth.save_token",
+        side_effect=OSError("disk full at C:/secret/path/.token.json"),
+    ):
+        response = client.get(
+            "/api/v1/broker/upstox/callback?code=auth-code-123&state=xyz"
+        )
+
+        assert response.status_code == 500
+        assert "Upstox Connection Failed" in response.text
+        assert "Failed to complete Upstox connection setup" in response.text
+        assert "disk full" not in response.text
+        assert "secret" not in response.text
+
+
+def test_callback_reports_mock_mode_when_sdk_missing():
+    """configure() returns False when the SDK isn't installed. The token was
+    still saved, so this is a partial success — not a green 'live feed' lie."""
+    with patch(
+        "backend.app.api.endpoints.broker.upstox_auth.exchange_code_for_token",
+        new=AsyncMock(return_value="live-token-xyz"),
+    ), patch(
+        "backend.app.api.endpoints.broker.upstox_auth.save_token"
+    ), patch(
+        "backend.app.api.endpoints.broker.upstox_client"
+    ) as mock_client:
+        mock_client.connect = AsyncMock()
+        mock_client.configure.return_value = False
+
+        response = client.get(
+            "/api/v1/broker/upstox/callback?code=auth-code-123&state=xyz"
+        )
+
+        assert response.status_code == 200
+        assert "Upstox Connected" in response.text
+        assert "mock mode" in response.text
+
+
+def test_error_page_escapes_html_in_the_detail():
+    from backend.app.core.upstox_auth import UpstoxAuthError
+
+    with patch(
+        "backend.app.api.endpoints.broker.upstox_auth.exchange_code_for_token",
+        new=AsyncMock(side_effect=UpstoxAuthError("<script>alert(1)</script>")),
+    ):
+        response = client.get(
+            "/api/v1/broker/upstox/callback?code=bad-code&state=xyz"
+        )
+
+        assert response.status_code == 502
+        assert "<script>alert(1)</script>" not in response.text
+        assert "&lt;script&gt;" in response.text
