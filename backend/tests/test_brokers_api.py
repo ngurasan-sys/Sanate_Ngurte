@@ -90,7 +90,15 @@ def test_delete_credentials_clears_stored_values():
     assert credential_store.load_credentials("upstox") is None
 
 
-def test_login_without_saved_credentials_returns_400():
+def test_login_without_saved_credentials_returns_400(monkeypatch):
+    # backend/app/main.py's load_dotenv() call permanently sets these in
+    # os.environ for the rest of the pytest process once anything imports
+    # main — isolate them here so this test reflects "nothing saved",
+    # not whatever backend/.env happens to contain on this machine.
+    monkeypatch.delenv("UPSTOX_API_KEY", raising=False)
+    monkeypatch.delenv("UPSTOX_API_SECRET", raising=False)
+    monkeypatch.delenv("UPSTOX_REDIRECT_URI", raising=False)
+
     response = client.get("/api/v1/brokers/upstox/login", follow_redirects=False)
     assert response.status_code == 400
 
