@@ -25,12 +25,17 @@ from backend.app.api.endpoints.brokers import router as brokers_router
 from backend.app.api.endpoints.manual_trading import router as manual_trading_router
 from backend.app.api.endpoints.algo_config import router as algo_config_router
 from backend.app.api.endpoints.cas_dislocation import router as cas_dislocation_router
+from backend.app.api.endpoints.backtest import router as backtest_router
+from backend.app.api.endpoints.footprint import router as footprint_router
+from backend.app.api.endpoints.ofao import router as ofao_router
 
 from backend.app.engines.opportunity import opportunity_engine
 from backend.app.engines.decision import decision_engine
 from backend.app.engines.risk import risk_engine
 from backend.app.engines.execution import execution_engine
 from backend.app.order_flow.tick_processor import order_flow_processor
+from backend.app.order_flow.footprint_processor import footprint_processor
+from backend.app.order_flow.mock_feed import mock_footprint_feed
 from backend.app.strategies.trending_oi_engine import trending_oi_engine
 from backend.app.strategies.trending_oi_price_action.engine import trending_oi_pa_engine
 from backend.app.strategies.intraday_trend_scalper.engine import intraday_trend_scalper
@@ -43,6 +48,7 @@ from backend.app.strategies.expiry_engine import expiry_oi_tracker_engine
 from backend.app.strategies.option_analytics import option_analytics_engine
 from backend.app.strategies.manual_trading import manual_trading_engine
 from backend.app.strategies.cas_dislocation.engine import cas_dislocation_engine
+from backend.app.strategies.order_flow_absorption.engine import ofao_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
 from backend.app.market_data.upstox_v3 import upstox_client
 from backend.app.core import upstox_auth
@@ -100,6 +106,8 @@ async def lifespan(app: FastAPI):
     risk_engine.start()
     execution_engine.start()
     order_flow_processor.start()
+    footprint_processor.start()
+    mock_footprint_feed.start()
     trending_oi_engine.start()
     trending_oi_pa_engine.start()
     intraday_trend_scalper.start()
@@ -112,6 +120,7 @@ async def lifespan(app: FastAPI):
     option_analytics_engine.start()
     manual_trading_engine.start()
     cas_dislocation_engine.start()
+    ofao_engine.start()
     market_breadth_engine.start()
 
     # Start Upstox stream — use a saved token if we have one, otherwise
@@ -161,6 +170,12 @@ async def lifespan(app: FastAPI):
         if hasattr(order_flow_processor, "stop"):
             order_flow_processor.stop()
 
+        if hasattr(footprint_processor, "stop"):
+            footprint_processor.stop()
+
+        if hasattr(mock_footprint_feed, "stop"):
+            mock_footprint_feed.stop()
+
         if hasattr(execution_engine, "stop"):
             execution_engine.stop()
 
@@ -205,6 +220,9 @@ async def lifespan(app: FastAPI):
 
         if hasattr(cas_dislocation_engine, "stop"):
             cas_dislocation_engine.stop()
+
+        if hasattr(ofao_engine, "stop"):
+            ofao_engine.stop()
 
         if hasattr(market_breadth_engine, "stop"):
             market_breadth_engine.stop()
@@ -275,6 +293,10 @@ app.include_router(
 )
 
 app.include_router(
+    footprint_router
+)
+
+app.include_router(
     levels_router
 )
 
@@ -304,6 +326,14 @@ app.include_router(
 
 app.include_router(
     cas_dislocation_router
+)
+
+app.include_router(
+    ofao_router
+)
+
+app.include_router(
+    backtest_router
 )
 
 

@@ -85,7 +85,17 @@ def check_diagonal_imbalance(footprint, ratio=3.0):
              footprint[higher_price].sell_imbalance = True
 
 def check_stacked_imbalance(footprint, min_consecutive=3):
+    """Marks every node's `stacked_zone` ("BUY" | "SELL" | None) — was
+    previously computed but discarded (the buy_stack/sell_stack lists
+    were built and then never used, "pass"-ed away), so no caller could
+    ever actually render a stacked-imbalance zone. Resets stale markers
+    from a prior call first, since imbalance flags can flip tick-to-tick
+    as new price levels fill in.
+    """
     sorted_prices = sorted(footprint.keys())
+    for p in sorted_prices:
+        footprint[p].stacked_zone = None
+
     buy_stack = []
     sell_stack = []
 
@@ -93,14 +103,24 @@ def check_stacked_imbalance(footprint, min_consecutive=3):
         if footprint[p].buy_imbalance:
             buy_stack.append(p)
         else:
+            if len(buy_stack) >= min_consecutive:
+                for sp in buy_stack:
+                    footprint[sp].stacked_zone = "BUY"
             buy_stack = []
 
         if footprint[p].sell_imbalance:
             sell_stack.append(p)
         else:
+            if len(sell_stack) >= min_consecutive:
+                for sp in sell_stack:
+                    footprint[sp].stacked_zone = "SELL"
             sell_stack = []
 
-        if len(buy_stack) >= min_consecutive:
-            pass # We could emit a signal here
-        if len(sell_stack) >= min_consecutive:
-            pass # We could emit a signal here
+    # A stack that runs to the end of the sorted price range never hits
+    # the "else" branch above that would flush it — flush both here.
+    if len(buy_stack) >= min_consecutive:
+        for sp in buy_stack:
+            footprint[sp].stacked_zone = "BUY"
+    if len(sell_stack) >= min_consecutive:
+        for sp in sell_stack:
+            footprint[sp].stacked_zone = "SELL"

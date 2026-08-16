@@ -18,6 +18,7 @@ class AsyncPersistenceWorker:
         event_bus.subscribe("persist_risk_event", self._enqueue_event)
         event_bus.subscribe("persist_execution", self._enqueue_event)
         event_bus.subscribe("persist_order_flow", self._enqueue_order_flow_event)
+        event_bus.subscribe("persist_ofao_setup", self._enqueue_ofao_event)
 
     def _init_db(self):
         self.conn.execute("""
@@ -50,12 +51,34 @@ class AsyncPersistenceWorker:
                 state_json JSON
             )
         """)
+        # One row per OFAO state *transition* (see engine.py's
+        # _update_snapshot — it only publishes persist_ofao_setup when
+        # the state actually changed), not per evaluation cycle — the
+        # trade journal (spec §27) this feeds needs the setup's history,
+        # not a 500ms-resolution flood.
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS ofao_setups (
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                instrument_key VARCHAR,
+                underlying VARCHAR,
+                setup_id VARCHAR,
+                state VARCHAR,
+                direction VARCHAR,
+                location_price DOUBLE,
+                absorption_strength DOUBLE,
+                last_price DOUBLE,
+                state_json JSON
+            )
+        """)
 
     async def _enqueue_event(self, event_data: dict):
         await self.queue.put(("generic", event_data))
 
     async def _enqueue_order_flow_event(self, event_data: dict):
         await self.queue.put(("order_flow", event_data))
+
+    async def _enqueue_ofao_event(self, event_data: dict):
+        await self.queue.put(("ofao_setup", event_data))
 
     async def run(self):
         logger.info("Starting Async Persistence Worker")
@@ -96,6 +119,7 @@ class AsyncPersistenceWorker:
             risk_batch = []
             execution_batch = []
             order_flow_batch = []
+            ofao_batch = []
 
             for item in batch:
                 if isinstance(item, tuple):
@@ -115,6 +139,18 @@ class AsyncPersistenceWorker:
                         event.get("bar_delta"),
                         event.get("cvd"),
                         json.dumps(event)
+                    ))
+                elif event_type == "ofao_setup":
+                    ofao_batch.append((
+                        event.get("instrument_key"),
+                        event.get("underlying"),
+                        event.get("setup_id"),
+                        event.get("state"),
+                        event.get("direction"),
+                        event.get("location_price"),
+                        event.get("absorption_strength"),
+                        event.get("last_price"),
+                        json.dumps(event, default=str),
                     ))
                 elif isinstance(event, dict) and "decision" in event and "status" in event:
                     decision = event["decision"]
@@ -141,6 +177,16 @@ class AsyncPersistenceWorker:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     order_flow_batch
+                )
+            if ofao_batch:
+                self.conn.executemany(
+                    """
+                    INSERT INTO ofao_setups (
+                        instrument_key, underlying, setup_id, state, direction,
+                        location_price, absorption_strength, last_price, state_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    ofao_batch
                 )
         except Exception as e:
             logger.error(f"Failed to insert batch into DuckDB: {e}", exc_info=True)

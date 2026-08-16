@@ -39,7 +39,8 @@ export type NavigationPage =
   | 'EXPIRY_TRACKER'
   | 'EXECUTION_CONTROL'
   | 'BROKER_CONNECTIONS'
-  | 'CAS_DISLOCATION';
+  | 'CAS_DISLOCATION'
+  | 'OFAO';
 
 interface UIState {
   sidebarExpanded: boolean;

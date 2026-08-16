@@ -25,6 +25,7 @@ class FootprintNode(BaseModel):
     total_volume: int = 0
     buy_imbalance: bool = False
     sell_imbalance: bool = False
+    stacked_zone: Optional[str] = None  # "BUY" | "SELL" | None — set by check_stacked_imbalance
 
 class OrderFlowState(BaseModel):
     instrument_key: str

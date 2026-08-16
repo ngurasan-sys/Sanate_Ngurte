@@ -22,7 +22,8 @@ import {
   Link2,
   Crosshair,
   AlertTriangle,
-  Radar
+  Radar,
+  Waves
 } from 'lucide-react';
 
 interface SidebarItemProps {
@@ -91,6 +92,7 @@ export const Sidebar: React.FC = () => {
         { label: 'Pullback Chop Filter', icon: Activity, page: 'PULLBACK_CHOP_FILTER' },
         { label: '2 Candle Scalper', icon: Crosshair, page: 'TWO_CANDLE' },
         { label: 'CAS Dislocation', icon: Radar, page: 'CAS_DISLOCATION' },
+        { label: 'Order Flow Absorption', icon: Waves, page: 'OFAO' },
       ],
     },
     {

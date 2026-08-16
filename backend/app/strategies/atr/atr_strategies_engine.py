@@ -7,6 +7,7 @@ import pytz
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.models import Tick, Candle
 from backend.app.oi.models import OITick
+from backend.app.strategies.gap_opening.strike_selection import StrikeSelectionService
 
 logger = logging.getLogger(__name__)
 
@@ -425,17 +426,34 @@ class ATRStrategiesEngine:
         if candle and hasattr(candle, "close"):
             close_price = candle.close
 
+        # pos["direction"] ("BUY_CE"/"BUY_PE") is set once at Tier 1 entry and
+        # persists for every follow-up signal (ADD_TIER_2/TRAIL_SL/EXIT_ALL...),
+        # so it — not `action` — is the reliable source of which side we're on.
+        pos_direction = state["position"].get("direction") or action
+        option_type = "CE" if "CE" in pos_direction else "PE"
+        direction_label = "BULLISH" if option_type == "CE" else "BEARISH"
+        ref_price = close_price or state["position"]["avg_entry_price"]
+        selected = StrikeSelectionService.select_strike(underlying, ref_price, direction_label)
+        resolved_instrument = f"{underlying}{selected.strike_price}{selected.option_type}"
+
         signal = {
             "signal_id": f"SIG_{self.strategy_id}_{datetime.now().timestamp()}",
             "strategy_id": self.strategy_id,
             "strategy_name": self.strategy_name,
+            "instrument": resolved_instrument,
             "symbol": underlying,
             "underlying": underlying,
             "action": action,
-            "instrument_key": "OPT_PROXY",
-            "strike_price": 0,
-            "option_type": "CE" if "CE" in action else "PE",
-            "expiry": "",
+            "direction": "CALL" if option_type == "CE" else "PUT",
+            # ATR doesn't compute a real confidence score (it's a rule
+            # confluence, not a probability model) — this is a fixed
+            # placeholder so OpportunityEngine can convert the signal at
+            # all, not a measured conviction level.
+            "confidence": 80.0,
+            "instrument_key": selected.instrument_key,
+            "strike_price": selected.strike_price,
+            "option_type": selected.option_type,
+            "expiry": selected.expiry,
             "underlying_price": close_price,
             "option_price": close_price,
             "lots": lots,

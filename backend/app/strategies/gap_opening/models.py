@@ -59,6 +59,8 @@ class StrategySignal(BaseModel):
     signal_id: str
     strategy_id: str
     strategy_name: str
+    instrument: str    # resolved option instrument (underlying+strike+CE/PE) — what OpportunityEngine keys off
+    confidence: float  # fixed placeholder (see engine.py's _emit_signal) — not a measured probability
     symbol: str
     underlying: str
     action: Literal[

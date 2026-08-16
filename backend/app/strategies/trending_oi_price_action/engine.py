@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.models import Tick, Candle
+from backend.app.strategies.gap_opening.strike_selection import StrikeSelectionService
 from .indicators import SuperTrendIndicator, DailyATR
 
 logger = logging.getLogger(__name__)
@@ -326,12 +327,17 @@ class TrendingOIPriceActionStrategy:
 
         option_type = "CE" if "CE" in action else "PE"
 
-        # Use existing option strike resolver or deterministic fallback as fallback
         underlying = candle.instrument.split(' ')[0].replace('FUT', '').strip()
         if not underlying:
             underlying = "NIFTY"
 
-        resolved_instrument = f"{underlying} {self._get_strike(candle.close, option_type)}"
+        # self._get_strike() used to be called here but was never defined —
+        # every real BUY_CE/BUY_PE entry would crash with AttributeError.
+        # StrikeSelectionService (already used by gap_opening) is the real
+        # strike resolver, reused here instead of a second implementation.
+        direction_label = "BULLISH" if option_type == "CE" else "BEARISH"
+        selected = StrikeSelectionService.select_strike(underlying, candle.close, direction_label)
+        resolved_instrument = f"{underlying}{selected.strike_price}{selected.option_type}"
 
         signal = {
             "signal_id": f"SIG_{self.strategy_id}_{datetime.now().timestamp()}",

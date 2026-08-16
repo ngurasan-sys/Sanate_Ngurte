@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 from backend.app.engines.algo_config import AlgoTradingConfig
 from backend.app.market_data.lot_sizes import get_lot_size
 from backend.app.strategies.cas_dislocation.models import CASDislocationConfig
+from backend.app.strategies.order_flow_absorption.config import OFAOConfig
 
 
 @dataclass
@@ -214,6 +215,18 @@ def check_cas_enabled(config: CASDislocationConfig) -> Optional[str]:
     """
     if not config.enabled:
         return "CAS Dislocation Engine is not enabled (configure and enable it from its own page)."
+    return None
+
+
+def check_ofao_enabled(config: OFAOConfig) -> Optional[str]:
+    """OFAO's own arm switch — same independent-gate pattern as
+    check_cas_enabled, deliberately not sharing algo_config_state's
+    single-underlying capital/pyramid budget (OFAO trades NIFTY and
+    SENSEX concurrently — see the architecture doc §21). Applied only
+    when a decision's source == "OFAO".
+    """
+    if not config.enabled:
+        return "OFAO is not enabled (configure and enable it from its own page)."
     return None
 
 

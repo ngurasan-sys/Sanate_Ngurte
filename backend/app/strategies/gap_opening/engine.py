@@ -397,10 +397,21 @@ class GapOpeningEngine:
 
     async def _emit_signal(self, inst: str, action: str, lots: int, price: float, sl: float, mode: str, reason: str, dt: datetime):
         state = self.state[inst]
+
+        resolved_instrument = (
+            f"{inst}{state.selected_strike}{state.option_type}"
+            if state.selected_strike and state.option_type else inst
+        )
+
         sig = StrategySignal(
             signal_id=f"GAP_{int(dt.timestamp())}_{inst}",
             strategy_id="gap_opening_strategies",
             strategy_name="Gap Opening Strategies",
+            instrument=resolved_instrument,
+            # Gap Opening doesn't compute a real confidence score (rule
+            # confluence, not a probability model) — fixed placeholder so
+            # OpportunityEngine can convert the signal at all.
+            confidence=80.0,
             symbol=inst,
             underlying=inst,
             action=action, # type: ignore

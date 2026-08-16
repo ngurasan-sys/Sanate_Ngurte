@@ -22,6 +22,7 @@ class ConnectionManager:
             "risk": {},
             "execution": {},
             "order_flow": {},
+            "footprint": {},
             "levels": {},
             "algo": {},
             "trending_oi": {},
@@ -33,7 +34,8 @@ class ConnectionManager:
             "option_analytics": {},
             "manual_trading": {},
             "cas_dislocation": {},
-            "cas_dislocation_positions": {}
+            "cas_dislocation_positions": {},
+            "ofao": {}
         }
 
         # Subscribe to events from the event bus and forward to websocket
@@ -41,6 +43,8 @@ class ConnectionManager:
         event_bus.subscribe("MARKET_TICK", lambda e: self._publish_model_or_dict("chart", e))
         event_bus.subscribe("LEVEL_CREATED", lambda e: self._publish_model_or_dict("levels", e))
         event_bus.subscribe("order_flow", lambda e: self.broadcast("order_flow", e))
+        event_bus.subscribe("footprint_candles", lambda e: self.broadcast("footprint", e))
+        event_bus.subscribe("ofao_state", lambda e: self.broadcast("ofao", e))
         event_bus.subscribe("execution_update", lambda e: self.broadcast("execution", e))
         event_bus.subscribe("decision_created", lambda e: self.broadcast("decisions", e))
         event_bus.subscribe("risk_passed", lambda e: self.broadcast("risk", e))

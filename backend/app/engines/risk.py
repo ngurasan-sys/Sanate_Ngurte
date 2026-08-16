@@ -10,10 +10,12 @@ from backend.app.execution.risk_limits import (
     RiskLimits,
     RiskState,
     check_cas_enabled,
+    check_ofao_enabled,
     evaluate_algo_extra,
     evaluate_all,
 )
 from backend.app.strategies.cas_dislocation.config_state import cas_config_state
+from backend.app.strategies.order_flow_absorption.engine import ofao_engine
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +121,11 @@ class RiskEngine:
             if cas_reason:
                 approved = False
                 reasons = reasons + [cas_reason]
+        elif source == "OFAO":
+            ofao_reason = check_ofao_enabled(ofao_engine.config)
+            if ofao_reason:
+                approved = False
+                reasons = reasons + [ofao_reason]
 
         reason_text = "Passed all risk checks." if approved else " ".join(reasons)
 

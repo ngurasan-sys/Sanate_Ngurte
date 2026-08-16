@@ -11,3 +11,21 @@ pytest-asyncio
 upstox-python-sdk
 python-dotenv
 cryptography
+pandas
+pyarrow
+numba
+vectorbt
+# vectorbt's own requirements.txt also lists anywidget/ipywidgets (interactive
+# Jupyter plotting widgets only, not needed for headless Portfolio.from_signals
+# computation) and matplotlib/scikit-learn/dateparser/dill/imageio (needed).
+# anywidget/ipywidgets are deliberately excluded here: their install pulls a
+# JupyterLab widget asset with a path long enough to fail on Windows unless
+# long-path support is enabled (a system setting, not a package issue) — see
+# https://pip.pypa.io/warnings/enable-long-paths. `pip install vectorbt --no-deps`
+# then the rest of this file avoids it; core computation works without them
+# (verified: numba JIT + Portfolio.from_signals run correctly without them).
+matplotlib
+scikit-learn
+dateparser
+dill
+imageio

@@ -16,6 +16,18 @@ class PullbackChopFilterStrategy:
         self.supertrend_period = 10
         self.supertrend_multiplier = 2.0
 
+        # OI conviction thresholds — explicit and separately configurable
+        # per direction (not a single magnitude check bolted onto both
+        # sides), matching the design spec's warning against accidentally
+        # treating a strongly bearish reading as "low conviction" chop.
+        self.bullish_oi_threshold = 40.0
+        self.bearish_oi_threshold = -40.0
+
+        # Pullback touch tolerance: price is considered to have "touched"
+        # SuperTrend/VWAP once it's within this fraction of the level, not
+        # only on an exact match (which real tick data rarely produces).
+        self.pullback_touch_tolerance_pct = 0.0005  # 0.05%
+
         # Position trackers per instrument
         self.positions = {}
 
@@ -52,6 +64,15 @@ class PullbackChopFilterStrategy:
 
     def stop(self):
         self.running = False
+
+    def _band_label(self, state: Dict[str, Any], band_value: float) -> str:
+        """Which indicator (SuperTrend vs VWAP) a given band value actually
+        came from — since Tier 1/Tier 2 are now keyed off upper/lower band
+        rather than a hardcoded indicator, the signal message needs this
+        to stay factually accurate instead of always saying "SuperTrend"
+        or "VWAP" regardless of which one it really was.
+        """
+        return "SuperTrend" if band_value == state["current_st"] else "VWAP"
 
     async def _emit_state(self, instrument: str, state: Dict[str, Any]):
         payload = {
@@ -162,20 +183,24 @@ class PullbackChopFilterStrategy:
         state["upper_band"] = max(state["last_vwap"], state["current_st"])
         state["lower_band"] = min(state["last_vwap"], state["current_st"])
 
-        # If conviction is lost, reset everything to CHOP_ZONE
-        if abs(state["oi_diff_pct"]) < 40.0:
+        # If conviction is lost, reset everything to CHOP_ZONE. Checking
+        # both explicit thresholds separately (rather than a single
+        # abs(...) magnitude check) keeps a strongly bearish reading from
+        # ever being misclassified as "low conviction" if the two
+        # thresholds are ever tuned to different magnitudes.
+        if state["oi_diff_pct"] < self.bullish_oi_threshold and state["oi_diff_pct"] > self.bearish_oi_threshold:
             state["market_state"] = "CHOP_ZONE"
             state["internal_state"] = "WAITING"
             state["active_signal"] = {
                 "type": "WAIT",
-                "message": f"OI Conviction ({state['oi_diff_pct']}%) below 40% threshold.",
+                "message": f"OI Conviction ({state['oi_diff_pct']}%) below {self.bullish_oi_threshold}% threshold.",
                 "color": "slate"
             }
             await self._emit_state(instrument, state)
             return
 
         # Handle Bullish Flow
-        if state["oi_diff_pct"] >= 40.0:
+        if state["oi_diff_pct"] >= self.bullish_oi_threshold:
             if state["internal_state"] in ["WAITING", "INVALIDATED", "BEARISH_TREND_CONFIRMED", "BEARISH_TIER_1", "BEARISH_TIER_2"]:
                 if ltp > state["upper_band"]:
                     state["market_state"] = "TRENDING_BULLISH"
@@ -194,24 +219,38 @@ class PullbackChopFilterStrategy:
                         "color": "slate"
                     }
             elif state["internal_state"] == "BULLISH_TREND_CONFIRMED":
-                if ltp <= state["current_st"] * 1.0005:
+                # Tier 1 = the shallower band (upper_band) — the level
+                # price just broke above to confirm the trend, now being
+                # retested on the way back down. Keyed off upper/lower
+                # band directly rather than hardcoded to SuperTrend, so
+                # the ladder stays correctly ordered (near level first,
+                # far level second) regardless of which of VWAP/SuperTrend
+                # is actually higher on a given day — hardcoding it to
+                # SuperTrend meant Tier 2 could fire immediately after
+                # Tier 1 with zero further retracement whenever VWAP
+                # happened to be the shallower band instead.
+                if ltp <= state["upper_band"] * (1 + self.pullback_touch_tolerance_pct):
                     state["internal_state"] = "BULLISH_TIER_1"
                     state["active_signal"] = {
                         "type": "BUY_TIER_1",
-                        "message": "Scale In (Tier 1) at SuperTrend.",
+                        "message": f"Scale In (Tier 1) at {self._band_label(state, state['upper_band'])}.",
                         "color": "emerald"
                     }
             elif state["internal_state"] == "BULLISH_TIER_1":
-                if ltp <= state["last_vwap"] * 1.0005:
+                # Tier 2 = the deeper band (lower_band) — genuinely
+                # further than Tier 1's level, not just "at or below
+                # VWAP" (which could already be trivially true the moment
+                # Tier 1 fires, if VWAP sits above SuperTrend).
+                if ltp <= state["lower_band"] * (1 + self.pullback_touch_tolerance_pct):
                     state["internal_state"] = "BULLISH_TIER_2"
                     state["active_signal"] = {
                         "type": "BUY_TIER_2",
-                        "message": "Scale In (Tier 2) at VWAP.",
+                        "message": f"Scale In (Tier 2) at {self._band_label(state, state['lower_band'])}.",
                         "color": "emerald"
                     }
 
         # Handle Bearish Flow
-        elif state["oi_diff_pct"] <= -40.0:
+        elif state["oi_diff_pct"] <= self.bearish_oi_threshold:
             if state["internal_state"] in ["WAITING", "INVALIDATED", "BULLISH_TREND_CONFIRMED", "BULLISH_TIER_1", "BULLISH_TIER_2"]:
                 if ltp < state["lower_band"]:
                     state["market_state"] = "TRENDING_BEARISH"
@@ -230,19 +269,22 @@ class PullbackChopFilterStrategy:
                         "color": "slate"
                     }
             elif state["internal_state"] == "BEARISH_TREND_CONFIRMED":
-                if ltp >= state["current_st"] * 0.9995:
+                # Mirror of the bullish case: Tier 1 = lower_band (the
+                # shallower band from below, just broken to confirm the
+                # bearish trend), Tier 2 = upper_band (the deeper level).
+                if ltp >= state["lower_band"] * (1 - self.pullback_touch_tolerance_pct):
                     state["internal_state"] = "BEARISH_TIER_1"
                     state["active_signal"] = {
                         "type": "BUY_TIER_1",
-                        "message": "Scale In Bearish (Tier 1) at SuperTrend.",
+                        "message": f"Scale In Bearish (Tier 1) at {self._band_label(state, state['lower_band'])}.",
                         "color": "rose"
                     }
             elif state["internal_state"] == "BEARISH_TIER_1":
-                if ltp >= state["last_vwap"] * 0.9995:
+                if ltp >= state["upper_band"] * (1 - self.pullback_touch_tolerance_pct):
                     state["internal_state"] = "BEARISH_TIER_2"
                     state["active_signal"] = {
                         "type": "BUY_TIER_2",
-                        "message": "Scale In Bearish (Tier 2) at VWAP.",
+                        "message": f"Scale In Bearish (Tier 2) at {self._band_label(state, state['upper_band'])}.",
                         "color": "rose"
                     }
 

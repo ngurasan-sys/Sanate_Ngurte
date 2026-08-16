@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.models import Tick, Candle
+from backend.app.strategies.gap_opening.strike_selection import StrikeSelectionService
 from backend.app.strategies.trending_oi_price_action.indicators import SuperTrendIndicator
 
 logger = logging.getLogger(__name__)
@@ -195,13 +196,13 @@ class IntradayTrendScalper:
                         # Initial stop at Day Low
                         initial_stop = state["current_day_low"] - self.stop_buffer_points
                         state["position_direction"] = 1
-                        self._execute_entry(state, "ENTRY_TIER_1", self.tier_1_lots, candle.close, initial_stop)
+                        await self._execute_entry(candle.instrument, state, "ENTRY_TIER_1", self.tier_1_lots, candle.close, initial_stop)
                 elif state["bearish_oi_confirmed"]:
                     if candle.high >= state["last_vwap"] - self.stop_buffer_points:
                         # Initial stop at Day High
                         initial_stop = state["current_day_high"] + self.stop_buffer_points
                         state["position_direction"] = -1
-                        self._execute_entry(state, "ENTRY_TIER_1", self.tier_1_lots, candle.close, initial_stop)
+                        await self._execute_entry(candle.instrument, state, "ENTRY_TIER_1", self.tier_1_lots, candle.close, initial_stop)
                 else:
                     state["state"] = "SCANNING"
                     state["next_action"] = "Conviction lost. Scanning again."
@@ -211,14 +212,18 @@ class IntradayTrendScalper:
 
             # Strict VWAP Invalidation Check (Candle Close)
             if is_bullish and candle.close < state["last_vwap"]:
+                lots_before_exit = state["lots_held"]
                 state["state"] = "INVALIDATED"
                 state["lots_held"] = 0
                 state["next_action"] = "Invalidated: Closed below VWAP."
+                await self._emit_signal(candle.instrument, "EXIT_ALL", state, lots_before_exit, state["current_sl"], state["next_action"])
                 return
             elif not is_bullish and candle.close > state["last_vwap"]:
+                lots_before_exit = state["lots_held"]
                 state["state"] = "INVALIDATED"
                 state["lots_held"] = 0
                 state["next_action"] = "Invalidated: Closed above VWAP."
+                await self._emit_signal(candle.instrument, "EXIT_ALL", state, lots_before_exit, state["current_sl"], state["next_action"])
                 return
 
             # Dynamic Reversal / Tier 2 logic
@@ -237,24 +242,24 @@ class IntradayTrendScalper:
                 if is_strong_reversal:
                     # Immediate Tier 2 add
                     new_sl = state["last_vwap"] - self.stop_buffer_points if is_bullish else state["last_vwap"] + self.stop_buffer_points
-                    self._execute_entry(state, "ENTRY_TIER_2", self.tier_2_lots, candle.close, new_sl)
+                    await self._execute_entry(candle.instrument, state, "ENTRY_TIER_2", self.tier_2_lots, candle.close, new_sl)
                     state["next_action"] = "Added Tier 2 on strong reversal."
                 else:
                     # Normal pullback to SuperTrend
                     if is_bullish and candle.low <= state["supertrend"] + self.stop_buffer_points:
-                        self._execute_entry(state, "ENTRY_TIER_2", self.tier_2_lots, candle.close, candle.low - self.stop_buffer_points)
+                        await self._execute_entry(candle.instrument, state, "ENTRY_TIER_2", self.tier_2_lots, candle.close, candle.low - self.stop_buffer_points)
                         state["next_action"] = "Added Tier 2 on SuperTrend pullback."
                     elif not is_bullish and candle.high >= state["supertrend"] - self.stop_buffer_points:
-                        self._execute_entry(state, "ENTRY_TIER_2", self.tier_2_lots, candle.close, candle.high + self.stop_buffer_points)
+                        await self._execute_entry(candle.instrument, state, "ENTRY_TIER_2", self.tier_2_lots, candle.close, candle.high + self.stop_buffer_points)
                         state["next_action"] = "Added Tier 2 on SuperTrend pullback."
 
             # Tier 3 Logic
             elif state["state"] == "ENTRY_TIER_2":
                 if is_bullish and candle.low <= state["current_day_low"] + self.stop_buffer_points:
-                    self._execute_entry(state, "ENTRY_TIER_3", self.tier_3_lots, candle.close, state["current_day_low"] - self.stop_buffer_points)
+                    await self._execute_entry(candle.instrument, state, "ENTRY_TIER_3", self.tier_3_lots, candle.close, state["current_day_low"] - self.stop_buffer_points)
                     state["next_action"] = "Added Tier 3 at Day Low."
                 elif not is_bullish and candle.high >= state["current_day_high"] - self.stop_buffer_points:
-                    self._execute_entry(state, "ENTRY_TIER_3", self.tier_3_lots, candle.close, state["current_day_high"] + self.stop_buffer_points)
+                    await self._execute_entry(candle.instrument, state, "ENTRY_TIER_3", self.tier_3_lots, candle.close, state["current_day_high"] + self.stop_buffer_points)
                     state["next_action"] = "Added Tier 3 at Day High."
 
             # Trailing Stop Logic (Candle by Candle)
@@ -265,14 +270,16 @@ class IntradayTrendScalper:
                         state["current_sl"] = new_stop
                         state["state"] = "TRAILING"
                         state["next_action"] = "Trailed stop upward."
+                        await self._emit_signal(candle.instrument, "TRAIL_SL", state, state["lots_held"], state["current_sl"], state["next_action"])
                 elif not is_bullish:
                     new_stop = candle.high + self.stop_buffer_points
                     if new_stop < state["current_sl"] or state["current_sl"] == 0.0:
                         state["current_sl"] = new_stop
                         state["state"] = "TRAILING"
                         state["next_action"] = "Trailed stop downward."
+                        await self._emit_signal(candle.instrument, "TRAIL_SL", state, state["lots_held"], state["current_sl"], state["next_action"])
 
-    def _execute_entry(self, state: Dict[str, Any], tier: str, lots: int, price: float, stop_loss: float):
+    async def _execute_entry(self, instrument: str, state: Dict[str, Any], tier: str, lots: int, price: float, stop_loss: float):
         state["state"] = tier
 
         # Calculate new average
@@ -290,6 +297,35 @@ class IntradayTrendScalper:
         state["current_sl"] = stop_loss
         state["next_action"] = f"Entered {tier}. Managing position."
 
+        action = "BUY_CE" if state["position_direction"] == 1 else "BUY_PE"
+        await self._emit_signal(instrument, tier if tier != "ENTRY_TIER_1" else action, state, lots, stop_loss, state["next_action"])
+
+    async def _emit_signal(self, instrument: str, action: str, state: Dict[str, Any], lots: int, stop_loss: float, reason: str):
+        underlying = instrument.replace(" FUT", "").strip() or "NIFTY"
+        option_type = "CE" if state["position_direction"] == 1 else "PE"
+        direction_label = "BULLISH" if option_type == "CE" else "BEARISH"
+        ref_price = state["avg_entry_price"] or state["last_vwap"]
+        selected = StrikeSelectionService.select_strike(underlying, ref_price, direction_label)
+        resolved_instrument = f"{underlying}{selected.strike_price}{selected.option_type}"
+
+        signal = {
+            "signal_id": f"SIG_{self.strategy_id}_{datetime.now().timestamp()}",
+            "strategy_id": self.strategy_id,
+            "strategy_name": "Intraday Trend Scalper",
+            "instrument": resolved_instrument,
+            "action": action,
+            "timestamp": datetime.now(),
+            "direction": "CALL" if option_type == "CE" else "PUT",
+            # No real confidence score is computed (rule confluence, not a
+            # probability model) — fixed placeholder so OpportunityEngine
+            # can convert the signal at all.
+            "confidence": 80.0,
+            "evidence": reason,
+            "lots": lots,
+            "stop_loss": stop_loss,
+        }
+        await event_bus.publish("STRATEGY_SIGNAL", signal)
+
     async def _handle_market_tick(self, tick: Tick):
         if tick.instrument not in self.positions:
             return
@@ -301,14 +337,18 @@ class IntradayTrendScalper:
 
             # Check Hard Stop Hit
             if is_bullish and tick.price <= state["current_sl"]:
+                lots_before_exit = state["lots_held"]
                 state["state"] = "EXITED"
                 state["lots_held"] = 0
                 state["next_action"] = "Stop loss hit."
+                await self._emit_signal(tick.instrument, "EXIT_ALL", state, lots_before_exit, state["current_sl"], state["next_action"])
                 return
             elif not is_bullish and tick.price >= state["current_sl"] and state["current_sl"] > 0:
+                lots_before_exit = state["lots_held"]
                 state["state"] = "EXITED"
                 state["lots_held"] = 0
                 state["next_action"] = "Stop loss hit."
+                await self._emit_signal(tick.instrument, "EXIT_ALL", state, lots_before_exit, state["current_sl"], state["next_action"])
                 return
 
             # Check Partial Profit
@@ -316,6 +356,7 @@ class IntradayTrendScalper:
                 profit = tick.price - state["avg_entry_price"] if is_bullish else state["avg_entry_price"] - tick.price
                 if profit >= self.partial_profit_points:
                     state["partial_profit_taken"] = True
+                    exit_lots = state["lots_held"] - max(1, state["lots_held"] // 2)
                     state["lots_held"] = max(1, state["lots_held"] // 2)
                     state["state"] = "PROFIT_PROTECTION"
 
@@ -330,6 +371,7 @@ class IntradayTrendScalper:
                             state["state"] = "BREAK_EVEN"
 
                     state["next_action"] = "Partial profit taken. Stop at Break Even."
+                    await self._emit_signal(tick.instrument, "EXIT_PARTIAL", state, exit_lots, state["current_sl"], state["next_action"])
 
     async def _handle_trending_oi(self, data: Dict[str, Any]):
         if data.get("view") != "spot_trending_oi":

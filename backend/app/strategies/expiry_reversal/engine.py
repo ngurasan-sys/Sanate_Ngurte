@@ -8,6 +8,7 @@ from backend.app.core import upstox_auth
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.expiry_calendar import ExpiryLookupError, expiry_calendar
 from backend.app.market_data.models import Candle, Tick
+from backend.app.strategies.gap_opening.strike_selection import StrikeSelectionService
 from backend.app.strategies.trending_oi_price_action.indicators import DailyATR, SuperTrendIndicator
 
 from .analysis import (
@@ -330,6 +331,10 @@ class ExpiryReversalEngine:
             candle.instrument, "ENTER_TIER_1", direction, self.config.tier_1_lots,
             stop_loss, "Structural OI shift confirmed breakout",
         )
+        await self._publish_strategy_signal(
+            candle.instrument, "ENTER_TIER_1", direction, self.config.tier_1_lots,
+            stop_loss, "Structural OI shift confirmed breakout", tier_1_price,
+        )
 
     # -----------------------------------------------------------------
     # Tick ingestion — tier fills, profit protection, trailing, exits
@@ -367,6 +372,10 @@ class ExpiryReversalEngine:
                     tick.instrument, "ENTER_TIER_2", direction, self.config.tier_2_lots,
                     state["current_sl"], "Tier 2 level reached",
                 )
+                await self._publish_strategy_signal(
+                    tick.instrument, "ENTER_TIER_2", direction, self.config.tier_2_lots,
+                    state["current_sl"], "Tier 2 level reached", tick.price,
+                )
 
         if state["tier_3_status"] == "PENDING" and tier_3_price is not None:
             reached = (
@@ -379,6 +388,10 @@ class ExpiryReversalEngine:
                 await self._emit_signal(
                     tick.instrument, "ENTER_TIER_3", direction, self.config.tier_3_lots,
                     state["current_sl"], "Tier 3 level reached",
+                )
+                await self._publish_strategy_signal(
+                    tick.instrument, "ENTER_TIER_3", direction, self.config.tier_3_lots,
+                    state["current_sl"], "Tier 3 level reached", tick.price,
                 )
 
     async def _check_partial_profit(self, tick: Tick, state: Dict[str, Any]):
@@ -415,9 +428,17 @@ class ExpiryReversalEngine:
             tick.instrument, "EXIT_PARTIAL", direction, exit_lots, state["current_sl"],
             f"Booked {self.config.partial_exit_pct:.0f}% profit",
         )
+        await self._publish_strategy_signal(
+            tick.instrument, "EXIT_PARTIAL", direction, exit_lots, state["current_sl"],
+            f"Booked {self.config.partial_exit_pct:.0f}% profit", tick.price,
+        )
         await self._emit_signal(
             tick.instrument, "TRAIL_SL", direction, state["lots_held"], state["current_sl"],
             "Moved SL to break-even",
+        )
+        await self._publish_strategy_signal(
+            tick.instrument, "TRAIL_SL", direction, state["lots_held"], state["current_sl"],
+            "Moved SL to break-even", tick.price,
         )
 
     async def _check_stop_loss(self, tick: Tick, state: Dict[str, Any]):
@@ -431,6 +452,10 @@ class ExpiryReversalEngine:
             await self._emit_signal(
                 tick.instrument, "EXIT_ALL", direction, 0, state["current_sl"],
                 "Stop loss hit",
+            )
+            await self._publish_strategy_signal(
+                tick.instrument, "EXIT_ALL", direction, 0, state["current_sl"],
+                "Stop loss hit", tick.price,
             )
 
     async def _trail_stop(self, candle: Candle, state: Dict[str, Any]):
@@ -448,6 +473,10 @@ class ExpiryReversalEngine:
                     candle.instrument, "TRAIL_SL", direction, state["lots_held"],
                     state["current_sl"], "Trailing stop loss",
                 )
+                await self._publish_strategy_signal(
+                    candle.instrument, "TRAIL_SL", direction, state["lots_held"],
+                    state["current_sl"], "Trailing stop loss", candle.close,
+                )
         else:
             new_sl = max(state["current_sl"], candle.low - self.config.stop_loss_buffer_points)
             if new_sl > state["current_sl"]:
@@ -455,6 +484,10 @@ class ExpiryReversalEngine:
                 await self._emit_signal(
                     candle.instrument, "TRAIL_SL", direction, state["lots_held"],
                     state["current_sl"], "Trailing stop loss",
+                )
+                await self._publish_strategy_signal(
+                    candle.instrument, "TRAIL_SL", direction, state["lots_held"],
+                    state["current_sl"], "Trailing stop loss", candle.close,
                 )
 
     async def _emit_signal(
@@ -471,6 +504,48 @@ class ExpiryReversalEngine:
             timestamp=datetime.now(),
         )
         await event_bus.publish("expiry_reversal_signal", signal.model_dump(mode="json"))
+
+    async def _publish_strategy_signal(
+        self, instrument: str, action: str, direction: str, lots: int,
+        stop_loss: Optional[float], reason: str, ref_price: float,
+    ):
+        """Mirrors a genuine trade action onto STRATEGY_SIGNAL so
+        OpportunityEngine can convert it into an Opportunity for
+        risk/execution — expiry_reversal_signal (above) only reaches the
+        websocket broadcaster for the frontend, not risk/execution. Only
+        called for real trade actions (entries/exits/trailing), not
+        bookkeeping-only ones like SKIP_LATE_SESSION or
+        CANCEL_PENDING_TIERS, which have no real direction/quantity to
+        convert.
+
+        direction here is "BULLISH"/"BEARISH" (this strategy's own
+        convention, unchanged on expiry_reversal_signal above) — mapped
+        to "CALL"/"PUT" here to match the convention every other
+        STRATEGY_SIGNAL emitter in the codebase uses.
+        """
+        underlying = instrument.split(" ")[0]
+        option_type = "CE" if direction == "BULLISH" else "PE"
+        selected = StrikeSelectionService.select_strike(underlying, ref_price, direction)
+        resolved_instrument = f"{underlying}{selected.strike_price}{selected.option_type}"
+
+        signal = {
+            "signal_id": f"SIG_{self.strategy_id}_{datetime.now().timestamp()}",
+            "strategy_id": self.strategy_id,
+            "strategy_name": "Expiry Day Reversal",
+            "instrument": resolved_instrument,
+            "action": action,
+            "timestamp": datetime.now(),
+            "direction": "CALL" if option_type == "CE" else "PUT",
+            # No real confidence score is computed (a structural-break +
+            # OI-shift confluence, not a probability model) — fixed
+            # placeholder so OpportunityEngine can convert the signal at
+            # all, consistent with the other strategies' fixed defaults.
+            "confidence": 80.0,
+            "evidence": reason,
+            "lots": lots,
+            "stop_loss": stop_loss,
+        }
+        await event_bus.publish("STRATEGY_SIGNAL", signal)
 
     # -----------------------------------------------------------------
     # State snapshot for the live-stream/websocket layer

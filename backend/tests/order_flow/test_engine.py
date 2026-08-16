@@ -172,8 +172,57 @@ def test_stacked_imbalance():
     }
 
     check_stacked_imbalance(footprint, min_consecutive=3)
-    # The logic correctly counts it but doesn't store state yet based on the requirement,
-    # so we just ensure it runs without error.
+    assert footprint[100.0].stacked_zone == "BUY"
+    assert footprint[101.0].stacked_zone == "BUY"
+    assert footprint[102.0].stacked_zone == "BUY"
+    assert footprint[103.0].stacked_zone is None
+
+
+def test_stacked_imbalance_below_minimum_consecutive_is_not_marked():
+    from backend.app.order_flow.models import FootprintNode
+    from backend.app.order_flow.analysis import check_stacked_imbalance
+
+    footprint = {
+        100.0: FootprintNode(price=100.0, buy_imbalance=True),
+        101.0: FootprintNode(price=101.0, buy_imbalance=True),
+        102.0: FootprintNode(price=102.0, buy_imbalance=False),
+    }
+
+    check_stacked_imbalance(footprint, min_consecutive=3)
+    assert footprint[100.0].stacked_zone is None
+    assert footprint[101.0].stacked_zone is None
+
+
+def test_stacked_imbalance_stack_running_to_the_end_is_still_flushed():
+    """A stack that never hits a non-imbalanced level (runs off the end
+    of the sorted price range) must still be marked — the flush-on-break
+    logic alone would miss it.
+    """
+    from backend.app.order_flow.models import FootprintNode
+    from backend.app.order_flow.analysis import check_stacked_imbalance
+
+    footprint = {
+        100.0: FootprintNode(price=100.0, sell_imbalance=True),
+        101.0: FootprintNode(price=101.0, sell_imbalance=True),
+        102.0: FootprintNode(price=102.0, sell_imbalance=True),
+    }
+
+    check_stacked_imbalance(footprint, min_consecutive=3)
+    assert footprint[100.0].stacked_zone == "SELL"
+    assert footprint[102.0].stacked_zone == "SELL"
+
+
+def test_stacked_imbalance_resets_stale_markers_from_prior_call():
+    from backend.app.order_flow.models import FootprintNode
+    from backend.app.order_flow.analysis import check_stacked_imbalance
+
+    footprint = {
+        100.0: FootprintNode(price=100.0, buy_imbalance=True, stacked_zone="BUY"),
+        101.0: FootprintNode(price=101.0, buy_imbalance=False, stacked_zone="BUY"),
+    }
+
+    check_stacked_imbalance(footprint, min_consecutive=3)
+    assert footprint[101.0].stacked_zone is None
 
 def test_negative_cumulative_delta():
     # cumulative delta is negative, which is impossible in a single session unless reset
