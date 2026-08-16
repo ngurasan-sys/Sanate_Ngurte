@@ -2,12 +2,9 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
-from backend.app.core import upstox_auth
+from backend.app.core.active_broker import active_broker
 from backend.app.core.event_bus import event_bus
-from backend.app.market_data.option_chain_client import (
-    OptionChainLookupError,
-    fetch_option_chain,
-)
+from backend.app.market_data.option_chain_client import OptionChainLookupError
 from backend.app.oi.analysis import calculate_oi_change_pct, classify_buildup
 
 logger = logging.getLogger(__name__)
@@ -153,7 +150,7 @@ class ExpiryOITrackerEngine:
             self._task.cancel()
         logger.info("Expiry OI Tracker Engine stopped")
 
-    async def _fetch_chain_with_fallback(self, token: str) -> List[Dict[str, Any]]:
+    async def _fetch_chain_with_fallback(self, provider, token: str) -> List[Dict[str, Any]]:
         """`expiry_date=current_week` can legitimately return zero rows
         (verified against the real API — not every underlying has an
         expiry landing in Upstox's notion of "this week" at all times).
@@ -161,15 +158,17 @@ class ExpiryOITrackerEngine:
         that as an error.
         """
         try:
-            return await fetch_option_chain(self.underlying_key, token, "current_week")
+            return await provider.fetch_option_chain(self.underlying_key, token, "current_week")
         except OptionChainLookupError:
-            return await fetch_option_chain(self.underlying_key, token, "next_week")
+            return await provider.fetch_option_chain(self.underlying_key, token, "next_week")
 
     async def _poll_loop(self):
         while self.running:
             try:
-                token = upstox_auth.load_token()
-                if not token:
+                provider = active_broker.get_active_provider()
+                auth = active_broker.get_active_auth_module()
+                token = auth.load_token() if auth else None
+                if not token or provider is None:
                     await event_bus.publish("expiry_tracker", {
                         "sufficient_data": False,
                         "reason": "No saved Upstox token — log in via /api/v1/broker/upstox/login.",
@@ -177,7 +176,7 @@ class ExpiryOITrackerEngine:
                     await asyncio.sleep(self.poll_interval_seconds)
                     continue
 
-                chain = await self._fetch_chain_with_fallback(token)
+                chain = await self._fetch_chain_with_fallback(provider, token)
                 spot_price = chain[0]["underlying_spot_price"]
 
                 windowed = select_atm_window(chain, spot_price, STRIKE_WINDOW)

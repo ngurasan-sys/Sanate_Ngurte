@@ -50,8 +50,17 @@ from backend.app.strategies.manual_trading import manual_trading_engine
 from backend.app.strategies.cas_dislocation.engine import cas_dislocation_engine
 from backend.app.strategies.order_flow_absorption.engine import ofao_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
-from backend.app.market_data.upstox_v3 import upstox_client
+from backend.app.market_data.upstox_provider import upstox_provider
+from backend.app.execution.upstox_adapter import upstox_execution_adapter
 from backend.app.core import upstox_auth
+from backend.app.core.active_broker import active_broker
+
+# Registering here (module import time) means active_broker knows about
+# Upstox as soon as the app process exists — readiness (is_broker_ready)
+# still gates whether it can actually be activated.
+active_broker.register_broker(
+    "upstox", provider=upstox_provider, execution_adapter=upstox_execution_adapter, auth_module=upstox_auth,
+)
 
 # =============================================================
 # LOGGING
@@ -123,12 +132,33 @@ async def lifespan(app: FastAPI):
     ofao_engine.start()
     market_breadth_engine.start()
 
-    # Start Upstox stream — use a saved token if we have one, otherwise
-    # this stays in the existing mock-mode (logs a warning, no crash).
-    saved_token = upstox_auth.load_token()
-    if saved_token:
-        upstox_client.configure(saved_token)
-    asyncio.create_task(upstox_client.connect())
+    # If no broker has been explicitly activated yet but Upstox already
+    # has a saved token, activate it automatically — this preserves
+    # today's exact behavior (Upstox always connects on startup if a
+    # token exists) under the new multi-broker model.
+    #
+    # This used to be a fire-and-forget asyncio.create_task(), so a broker
+    # connect failure never took down the app. Now that it's awaited
+    # directly, wrap it in try/except so a transient Upstox (or any
+    # broker) connect failure at startup is logged but never prevents the
+    # other ~20 engines below from starting.
+    try:
+        if active_broker.get_active_broker_id() is None and active_broker.is_broker_ready("upstox"):
+            await active_broker.set_active_broker("upstox")
+        elif active_broker.get_active_broker_id() and active_broker.get_active_provider():
+            # A broker was already active from a previous run (persisted) —
+            # (re)connect its feed now that the process has restarted.
+            await active_broker.get_active_provider().connect_feed()
+    except Exception:
+        logger.exception("Failed to activate/reconnect broker feed at startup")
+    # If neither branch applies (no broker ready/active), the app starts
+    # with no live feed rather than silently defaulting to one.
+
+    # Register position checkers so switching the active broker is
+    # blocked while any of these has an open position/setup.
+    active_broker.register_position_checker("CAS Dislocation", cas_dislocation_engine.get_open_position_blocker)
+    active_broker.register_position_checker("Manual Trading", manual_trading_engine.get_open_position_blocker)
+    active_broker.register_position_checker("OFAO", ofao_engine.get_open_position_blocker)
 
     # ---------------------------------------------------------
     # Persistence Worker (lazy import)
@@ -227,8 +257,8 @@ async def lifespan(app: FastAPI):
         if hasattr(market_breadth_engine, "stop"):
             market_breadth_engine.stop()
 
-        if hasattr(upstox_client, "close"):
-            await upstox_client.close()
+        if active_broker.get_active_provider() is not None:
+            await active_broker.get_active_provider().disconnect_feed()
 
         # -----------------------------------------------------
         # Stop Event Bus

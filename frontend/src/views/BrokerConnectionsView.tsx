@@ -26,6 +26,22 @@ export const BrokerConnectionsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeBrokerId, setActiveBrokerId] = useState<string | null>(null);
+
+  const fetchActiveBroker = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/brokers/active`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setActiveBrokerId(data.broker_id);
+    } catch {
+      // non-fatal — the connections list still renders without this
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchActiveBroker();
+  }, [fetchActiveBroker]);
 
   const fetchBrokers = useCallback(async () => {
     try {
@@ -133,8 +149,33 @@ export const BrokerConnectionsView: React.FC = () => {
       setFormValues({});
       setNotice(`${active.display_name} disconnected.`);
       fetchBrokers();
+      // The backend clears the active broker when the active one is
+      // disconnected — re-read it so the ACTIVE badge clears immediately.
+      fetchActiveBroker();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to disconnect');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleMakeActive = async () => {
+    if (!active) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/brokers/active`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broker_id: active.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to activate broker');
+      setNotice(`${active.display_name} is now the active broker.`);
+      setActiveBrokerId(active.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to activate broker');
     } finally {
       setBusy(false);
     }
@@ -147,9 +188,9 @@ export const BrokerConnectionsView: React.FC = () => {
           Broker Connections
         </h2>
         <p className="text-xs text-zinc-400 font-sans mt-0.5">
-          Enter your own API credentials per broker and authenticate directly. Only Upstox
-          currently drives live strategies and order placement — Zerodha and Dhan store
-          validated credentials for future use.
+          Enter your own API credentials per broker and authenticate directly. Whichever broker
+          is marked ACTIVE drives live data and order execution for the whole platform — connect
+          a broker, then make it active.
         </p>
       </div>
 
@@ -183,6 +224,11 @@ export const BrokerConnectionsView: React.FC = () => {
             <Link2 size={14} className={b.connected ? 'text-emerald-400' : 'text-zinc-600'} />
             {b.display_name}
             <StatusBadge status={b.connected ? 'CONNECTED' : 'DISCONNECTED'} />
+            {activeBrokerId === b.id && (
+              <span className="text-[9px] font-bold text-amber-400 border border-amber-400/30 rounded px-1.5 py-0.5">
+                ACTIVE
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -247,6 +293,15 @@ export const BrokerConnectionsView: React.FC = () => {
                   className="flex-1 py-2 px-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded hover:bg-emerald-500/20 disabled:opacity-40 transition-colors text-xs font-bold"
                 >
                   SAVE & VERIFY
+                </button>
+              )}
+              {active.connected && activeBrokerId !== active.id && (
+                <button
+                  onClick={handleMakeActive}
+                  disabled={busy}
+                  className="flex-1 py-2 px-3 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded hover:bg-amber-500/20 disabled:opacity-40 transition-colors text-xs font-bold"
+                >
+                  MAKE ACTIVE
                 </button>
               )}
               {active.connected && (

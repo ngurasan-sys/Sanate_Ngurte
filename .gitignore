@@ -97,6 +97,7 @@ dist-ssr/
 backend/.token.json
 backend/.credential_key
 backend/.broker_credentials.json
+backend/.active_broker.json
 *.local
 
 

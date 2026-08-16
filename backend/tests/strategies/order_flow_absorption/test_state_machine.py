@@ -145,3 +145,33 @@ def test_full_happy_path_lifecycle():
     assert ctx.state == SetupState.EXITED
     reset_ctx = sm.reset("NIFTY FUT", reason="trade complete")
     assert reset_ctx.state == SetupState.NO_SETUP
+
+
+def test_has_any_active_setup_false_when_all_no_setup():
+    sm = OFAOStateMachine()
+    sm.get("NIFTY FUT")
+    assert sm.has_any_active_setup() is False
+
+
+def test_has_any_active_setup_true_when_one_instrument_in_flight():
+    sm = OFAOStateMachine()
+    sm.transition("NIFTY FUT", SetupState.LOCATION_REACHED, direction=SetupDirection.BULL, location_price=100.0)
+    assert sm.has_any_active_setup() is True
+
+
+def test_active_setups_lists_only_in_flight_instruments():
+    sm = OFAOStateMachine()
+    sm.get("BANKNIFTY FUT")  # touched but never started -> NO_SETUP
+    sm.transition("NIFTY FUT", SetupState.LOCATION_REACHED, direction=SetupDirection.BULL, location_price=100.0)
+    sm.transition("SENSEX FUT", SetupState.LOCATION_REACHED, direction=SetupDirection.BEAR, location_price=200.0)
+    sm.transition("SENSEX FUT", SetupState.INVALIDATED)  # terminal
+
+    assert sm.active_setups() == ["NIFTY FUT"]
+    assert sm.has_any_active_setup() is True
+
+
+def test_active_setups_empty_when_nothing_in_flight():
+    sm = OFAOStateMachine()
+    sm.get("NIFTY FUT")
+    assert sm.active_setups() == []
+    assert sm.has_any_active_setup() is False

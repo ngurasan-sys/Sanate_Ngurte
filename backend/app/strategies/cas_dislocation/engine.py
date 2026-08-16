@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 
 import pytz
 
-from backend.app.core import upstox_auth
+from backend.app.core.active_broker import active_broker
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.expiry_calendar import expiry_calendar
 from backend.app.market_data.futures_instrument import (
@@ -33,12 +33,8 @@ from backend.app.market_data.futures_instrument import (
     futures_instrument_cache,
 )
 from backend.app.market_data.lot_sizes import get_lot_size
-from backend.app.market_data.market_quote import MarketQuoteLookupError, fetch_quote
-from backend.app.market_data.option_chain_client import (
-    OptionChainLookupError,
-    fetch_option_chain,
-)
-from backend.app.market_data.symbols import INDEX_INSTRUMENT_KEYS
+from backend.app.market_data.market_quote import MarketQuoteLookupError
+from backend.app.market_data.option_chain_client import OptionChainLookupError
 from backend.app.strategies.expiry_engine import find_atm_strike
 from backend.app.strategies.manual_trading.analysis import extract_leg, resolve_strike_row
 
@@ -145,7 +141,12 @@ class CASDislocationEngine:
             return
 
         config = cas_config_state.get()
-        token = upstox_auth.load_token()
+        provider = active_broker.get_active_provider()
+        auth = active_broker.get_active_auth_module()
+        if provider is None or auth is None:
+            await self._publish_inactive(now_ist, "No active broker.")
+            return
+        token = auth.load_token()
         if not token:
             await self._publish_inactive(now_ist, "No saved Upstox token.")
             return
@@ -160,9 +161,9 @@ class CASDislocationEngine:
             return
 
         try:
-            chain = await fetch_option_chain(INDEX_INSTRUMENT_KEYS[config.underlying], token, "current_week")
+            chain = await provider.fetch_option_chain(provider.instrument_key_for_index(config.underlying), token, "current_week")
             future_key = await futures_instrument_cache.get(config.underlying, token)
-            future_quote = await fetch_quote(future_key, token)
+            future_quote = await provider.fetch_quote(future_key, token)
         except (OptionChainLookupError, FuturesInstrumentLookupError, MarketQuoteLookupError) as exc:
             await self._publish_inactive(now_ist, f"Data fetch failed: {exc}")
             return
@@ -274,6 +275,14 @@ class CASDislocationEngine:
 
     def _has_active_position(self) -> bool:
         return any(p.status in ("PENDING", "OPEN") for p in self.positions.values())
+
+    def get_open_position_blocker(self) -> Optional[str]:
+        open_positions = [p for p in self.positions.values() if p.status in ("PENDING", "OPEN")]
+        if not open_positions:
+            return None
+        return f"{len(open_positions)} open position(s): " + ", ".join(
+            f"{p.underlying} {p.strike} {p.option_type}" for p in open_positions
+        )
 
     async def _publish_inactive(self, now_ist, reason: str) -> None:
         self.latest_reading = CASReading(timestamp=now_ist, state="INACTIVE", reason=reason)

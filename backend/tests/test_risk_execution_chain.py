@@ -153,7 +153,7 @@ async def test_execution_without_instrument_token_is_rejected_not_submitted():
 
 @pytest.mark.asyncio
 async def test_execution_in_dry_run_reports_dry_run_not_submitted(monkeypatch):
-    monkeypatch.delenv("UPSTOX_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("EXECUTION_MODE", raising=False)
     engine = ExecutionEngine()
     published = []
 

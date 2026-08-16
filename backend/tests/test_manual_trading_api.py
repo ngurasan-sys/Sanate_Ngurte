@@ -5,6 +5,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api.endpoints.manual_trading import router as manual_trading_router
+from backend.app.core import active_broker as ab_module
+from backend.app.strategies.manual_trading import engine as engine_module
 from backend.app.strategies.manual_trading.engine import manual_trading_engine
 
 app = FastAPI()
@@ -48,10 +50,29 @@ def _row(strike, call_ltp=100.0):
 CHAIN = [_row(24500)]
 
 
-def test_place_order_endpoint_success():
-    with patch("backend.app.strategies.manual_trading.engine.upstox_auth.load_token", return_value="tok"), \
-         patch("backend.app.strategies.manual_trading.engine.fetch_option_chain", new=AsyncMock(return_value=CHAIN)), \
-         patch("backend.app.strategies.manual_trading.engine.event_bus.publish", new=AsyncMock()):
+class _FakeAuth:
+    def load_token(self):
+        return "tok"
+
+
+class _FakeProvider:
+    def instrument_key_for_index(self, underlying):
+        return "NSE_INDEX|Nifty 50"
+
+    async def fetch_option_chain(self, index_key, token, expiry_date="current_week"):
+        return CHAIN
+
+
+def _activate(monkeypatch):
+    registry = ab_module.ActiveBrokerRegistry()
+    registry.register_broker("upstox", provider=_FakeProvider(), auth_module=_FakeAuth())
+    registry._active_broker_id = "upstox"
+    monkeypatch.setattr(engine_module, "active_broker", registry)
+
+
+def test_place_order_endpoint_success(monkeypatch):
+    _activate(monkeypatch)
+    with patch("backend.app.strategies.manual_trading.engine.event_bus.publish", new=AsyncMock()):
         response = client.post("/api/v1/manual-trading/order", json={
             "underlying": "NIFTY", "option_type": "CE", "strike": 24500.0,
             "lots": 1, "stop_loss": 50.0, "target": 150.0, "pyramid_lot_size": 1,
@@ -66,10 +87,9 @@ def test_place_order_endpoint_success():
     assert body["status"] == "PENDING"
 
 
-def test_place_order_endpoint_rejects_bad_stop_loss():
-    with patch("backend.app.strategies.manual_trading.engine.upstox_auth.load_token", return_value="tok"), \
-         patch("backend.app.strategies.manual_trading.engine.fetch_option_chain", new=AsyncMock(return_value=CHAIN)), \
-         patch("backend.app.strategies.manual_trading.engine.event_bus.publish", new=AsyncMock()):
+def test_place_order_endpoint_rejects_bad_stop_loss(monkeypatch):
+    _activate(monkeypatch)
+    with patch("backend.app.strategies.manual_trading.engine.event_bus.publish", new=AsyncMock()):
         response = client.post("/api/v1/manual-trading/order", json={
             "underlying": "NIFTY", "option_type": "CE", "strike": 24500.0,
             "lots": 1, "stop_loss": 200.0, "target": 150.0, "pyramid_lot_size": 0,

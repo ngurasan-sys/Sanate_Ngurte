@@ -152,7 +152,7 @@ export const ExecutionControlView: React.FC = () => {
 
           <p className="text-xs text-zinc-400">
             Arming this switch is only the second of two requirements. LIVE orders also require{' '}
-            <code className="text-zinc-300">UPSTOX_EXECUTION_MODE=LIVE</code> set in{' '}
+            <code className="text-zinc-300">EXECUTION_MODE=LIVE</code> set in{' '}
             <code className="text-zinc-300">backend/.env</code>, which this panel cannot change.
             Current env mode is <span className="font-bold text-zinc-200">{status?.env_mode ?? '—'}</span>.
           </p>

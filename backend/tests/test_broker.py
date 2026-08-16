@@ -22,17 +22,15 @@ def test_login_redirects_to_real_upstox_url(monkeypatch):
     assert "client_id=my-client-id" in location
 
 
-def test_callback_success_saves_token_and_configures_client():
+def test_callback_success_saves_token_without_connecting_feed():
+    """Saving the token must not itself connect any feed — connecting only
+    happens when the broker is made active via /api/v1/brokers/active."""
     with patch(
         "backend.app.api.endpoints.broker.upstox_auth.exchange_code_for_token",
         new=AsyncMock(return_value="live-token-xyz"),
     ) as mock_exchange, patch(
         "backend.app.api.endpoints.broker.upstox_auth.save_token"
-    ) as mock_save, patch(
-        "backend.app.api.endpoints.broker.upstox_client"
-    ) as mock_client:
-        mock_client.connect = AsyncMock()
-
+    ) as mock_save:
         response = client.get(
             "/api/v1/broker/upstox/callback?code=auth-code-123&state=xyz"
         )
@@ -41,8 +39,6 @@ def test_callback_success_saves_token_and_configures_client():
         assert "Upstox Connected" in response.text
         mock_exchange.assert_awaited_once_with("auth-code-123")
         mock_save.assert_called_once_with("live-token-xyz")
-        mock_client.configure.assert_called_once_with("live-token-xyz")
-        mock_client.connect.assert_awaited_once()
 
 
 def test_callback_failure_renders_error_page():
@@ -80,29 +76,6 @@ def test_callback_save_token_failure_renders_generic_error_page():
         assert "Failed to complete Upstox connection setup" in response.text
         assert "disk full" not in response.text
         assert "secret" not in response.text
-
-
-def test_callback_reports_mock_mode_when_sdk_missing():
-    """configure() returns False when the SDK isn't installed. The token was
-    still saved, so this is a partial success — not a green 'live feed' lie."""
-    with patch(
-        "backend.app.api.endpoints.broker.upstox_auth.exchange_code_for_token",
-        new=AsyncMock(return_value="live-token-xyz"),
-    ), patch(
-        "backend.app.api.endpoints.broker.upstox_auth.save_token"
-    ), patch(
-        "backend.app.api.endpoints.broker.upstox_client"
-    ) as mock_client:
-        mock_client.connect = AsyncMock()
-        mock_client.configure.return_value = False
-
-        response = client.get(
-            "/api/v1/broker/upstox/callback?code=auth-code-123&state=xyz"
-        )
-
-        assert response.status_code == 200
-        assert "Upstox Connected" in response.text
-        assert "mock mode" in response.text
 
 
 def test_error_page_escapes_html_in_the_detail():

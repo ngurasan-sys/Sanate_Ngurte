@@ -10,23 +10,42 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytz
 
+from backend.app.core import active_broker as ab_module
+from backend.app.strategies.cas_dislocation import engine as engine_module
 from backend.app.strategies.cas_dislocation.config_state import cas_config_state
 from backend.app.strategies.cas_dislocation.engine import CASDislocationEngine
 
 IST = pytz.timezone("Asia/Kolkata")
 
 PATCH_DATETIME = "backend.app.strategies.cas_dislocation.engine.datetime"
-PATCH_TOKEN = "backend.app.strategies.cas_dislocation.engine.upstox_auth.load_token"
 PATCH_EXPIRY = "backend.app.strategies.cas_dislocation.engine.expiry_calendar.is_today_expiry_day"
-PATCH_CHAIN = "backend.app.strategies.cas_dislocation.engine.fetch_option_chain"
 PATCH_FUTURES_KEY = "backend.app.strategies.cas_dislocation.engine.futures_instrument_cache.get"
-PATCH_QUOTE = "backend.app.strategies.cas_dislocation.engine.fetch_quote"
 PATCH_PUBLISH = "backend.app.strategies.cas_dislocation.engine.event_bus.publish"
 
 
 class FakeQuote:
     def __init__(self, last_price):
         self.last_price = last_price
+
+
+class _FakeAuth:
+    def load_token(self):
+        return "fake-token"
+
+
+class _FakeProvider:
+    def __init__(self, chain, future_price):
+        self._chain = chain
+        self._future_price = future_price
+
+    def instrument_key_for_index(self, underlying):
+        return "NSE_INDEX|Nifty 50"
+
+    async def fetch_option_chain(self, index_key, token, expiry_date="current_week"):
+        return self._chain
+
+    async def fetch_quote(self, instrument_key, token):
+        return FakeQuote(self._future_price)
 
 
 def _row(strike, spot, expiry, ce_ltp, ce_bid, ce_ask, ce_iv, pe_ltp, pe_bid, pe_ask, pe_iv, ce_vol=1000, pe_vol=1000):
@@ -60,13 +79,17 @@ def _reset_config():
     cas_config_state.configure(underlying="NIFTY", lots=1)
 
 
-async def _tick_at(engine, when: datetime, chain, future_price, publish_capture):
+async def _tick_at(engine, when: datetime, chain, future_price, publish_capture, monkeypatch):
+    registry = ab_module.ActiveBrokerRegistry()
+    registry.register_broker(
+        "upstox", provider=_FakeProvider(chain, future_price), auth_module=_FakeAuth(),
+    )
+    registry._active_broker_id = "upstox"
+    monkeypatch.setattr(engine_module, "active_broker", registry)
+
     with patch(PATCH_DATETIME, new=_mock_now(when)), \
-         patch(PATCH_TOKEN, return_value="fake-token"), \
          patch(PATCH_EXPIRY, new=AsyncMock(return_value=True)), \
-         patch(PATCH_CHAIN, new=AsyncMock(return_value=chain)), \
          patch(PATCH_FUTURES_KEY, new=AsyncMock(return_value="NSE_FO|FUT1")), \
-         patch(PATCH_QUOTE, new=AsyncMock(return_value=FakeQuote(future_price))), \
          patch(PATCH_PUBLISH, new=publish_capture):
         await engine._tick()
 
@@ -75,20 +98,20 @@ NORMAL_CHAIN = [_row(24800, 24800.0, "2026-08-18", ce_ltp=20.0, ce_bid=19.5, ce_
 
 
 @pytest.mark.asyncio
-async def test_tick_outside_watch_window_is_inactive():
+async def test_tick_outside_watch_window_is_inactive(monkeypatch):
     engine = CASDislocationEngine()
     published = []
 
     async def capture(topic, payload):
         published.append((topic, payload))
 
-    await _tick_at(engine, datetime(2026, 8, 18, 12, 0, 0, tzinfo=IST), NORMAL_CHAIN, 24800.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 12, 0, 0, tzinfo=IST), NORMAL_CHAIN, 24800.0, capture, monkeypatch)
 
     assert engine.latest_reading.state == "INACTIVE"
 
 
 @pytest.mark.asyncio
-async def test_tick_pre_cas_tracks_baseline_volume():
+async def test_tick_pre_cas_tracks_baseline_volume(monkeypatch):
     engine = CASDislocationEngine()
 
     async def capture(topic, payload):
@@ -97,22 +120,22 @@ async def test_tick_pre_cas_tracks_baseline_volume():
     chain1 = [_row(24800, 24800.0, "2026-08-18", 20.0, 19.5, 20.5, 15.0, 25.0, 24.5, 25.5, 15.0, ce_vol=1000, pe_vol=1000)]
     chain2 = [_row(24800, 24800.0, "2026-08-18", 20.0, 19.5, 20.5, 15.0, 25.0, 24.5, 25.5, 15.0, ce_vol=1100, pe_vol=1050)]
 
-    await _tick_at(engine, datetime(2026, 8, 18, 15, 5, 0, tzinfo=IST), chain1, 24800.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 15, 5, 0, tzinfo=IST), chain1, 24800.0, capture, monkeypatch)
     assert engine.latest_reading.state == "PRE_CAS"
 
-    await _tick_at(engine, datetime(2026, 8, 18, 15, 6, 0, tzinfo=IST), chain2, 24800.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 15, 6, 0, tzinfo=IST), chain2, 24800.0, capture, monkeypatch)
     assert engine.latest_reading.state == "PRE_CAS"
     assert list(engine._volume_history_pre_cas) == [150]  # (1100-1000)+(1050-1000)
 
 
 @pytest.mark.asyncio
-async def test_tick_at_freeze_captures_snapshot():
+async def test_tick_at_freeze_captures_snapshot(monkeypatch):
     engine = CASDislocationEngine()
 
     async def capture(topic, payload):
         pass
 
-    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 0, tzinfo=IST), NORMAL_CHAIN, 24800.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 0, tzinfo=IST), NORMAL_CHAIN, 24800.0, capture, monkeypatch)
 
     assert engine.latest_reading.state == "CAS_FREEZE"
     assert engine.snapshot is not None
@@ -123,7 +146,7 @@ async def test_tick_at_freeze_captures_snapshot():
 
 
 @pytest.mark.asyncio
-async def test_tick_dislocation_detects_underpriced_ce_and_signals():
+async def test_tick_dislocation_detects_underpriced_ce_and_signals(monkeypatch):
     engine = CASDislocationEngine()
     cas_config_state.configure(underlying="NIFTY", lots=1, min_score_to_alert=1, min_score_to_execute=1)
 
@@ -131,14 +154,14 @@ async def test_tick_dislocation_detects_underpriced_ce_and_signals():
         pass
 
     # Freeze at 15:15 with spot=future=24800.
-    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 0, tzinfo=IST), NORMAL_CHAIN, 24800.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 0, tzinfo=IST), NORMAL_CHAIN, 24800.0, capture, monkeypatch)
     assert engine.latest_reading.state == "CAS_FREEZE"
 
     # Futures rip 70 points higher; CE ask (20.5) is still cheap relative
     # to what it should be worth now, PE ask barely moved -> CE underpriced.
     moved_chain = [_row(24800, 24800.0, "2026-08-18", ce_ltp=21.0, ce_bid=20.0, ce_ask=21.0,
                          ce_iv=15.0, pe_ltp=24.0, pe_bid=23.0, pe_ask=24.0, pe_iv=15.0, ce_vol=1500, pe_vol=1200)]
-    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 5, tzinfo=IST), moved_chain, 24870.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 5, tzinfo=IST), moved_chain, 24870.0, capture, monkeypatch)
 
     reading = engine.latest_reading
     assert reading.future_displacement == pytest.approx(70.0)
@@ -148,7 +171,7 @@ async def test_tick_dislocation_detects_underpriced_ce_and_signals():
 
 
 @pytest.mark.asyncio
-async def test_tick_detects_volatility_shock_blocks_signal():
+async def test_tick_detects_volatility_shock_blocks_signal(monkeypatch):
     engine = CASDislocationEngine()
 
     async def capture(topic, payload):
@@ -156,14 +179,14 @@ async def test_tick_detects_volatility_shock_blocks_signal():
 
     baseline_chain = [_row(24800, 24800.0, "2026-08-18", ce_ltp=3.0, ce_bid=2.5, ce_ask=3.0,
                             ce_iv=15.0, pe_ltp=3.0, pe_bid=2.5, pe_ask=3.0, pe_iv=15.0)]
-    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 0, tzinfo=IST), baseline_chain, 24800.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 0, tzinfo=IST), baseline_chain, 24800.0, capture, monkeypatch)
     assert engine.latest_reading.state == "CAS_FREEZE"
 
     # Both CE and PE LTP spike from 3 -> 80 together — the exact shock
     # signature this engine exists to refuse to trade.
     shock_chain = [_row(24800, 24800.0, "2026-08-18", ce_ltp=80.0, ce_bid=75.0, ce_ask=82.0,
                          ce_iv=15.0, pe_ltp=80.0, pe_bid=75.0, pe_ask=82.0, pe_iv=15.0)]
-    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 5, tzinfo=IST), shock_chain, 24800.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 15, 15, 5, tzinfo=IST), shock_chain, 24800.0, capture, monkeypatch)
 
     reading = engine.latest_reading
     assert reading.state == "VOLATILITY_SHOCK"
@@ -171,13 +194,13 @@ async def test_tick_detects_volatility_shock_blocks_signal():
 
 
 @pytest.mark.asyncio
-async def test_tick_past_dislocation_end_is_inactive():
+async def test_tick_past_dislocation_end_is_inactive(monkeypatch):
     engine = CASDislocationEngine()
 
     async def capture(topic, payload):
         pass
 
-    await _tick_at(engine, datetime(2026, 8, 18, 15, 18, 0, tzinfo=IST), NORMAL_CHAIN, 24800.0, capture)
+    await _tick_at(engine, datetime(2026, 8, 18, 15, 18, 0, tzinfo=IST), NORMAL_CHAIN, 24800.0, capture, monkeypatch)
     assert engine.latest_reading.state == "INACTIVE"
     assert "15:17" in engine.latest_reading.reason
 

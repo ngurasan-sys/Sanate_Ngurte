@@ -6,17 +6,13 @@ from typing import Any, Dict, List, Optional
 
 import pytz
 
-from backend.app.core import upstox_auth
+from backend.app.core.active_broker import active_broker
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.historical_candles import (
     HistoricalCandleLookupError,
     closes_from_candles,
-    fetch_historical_candles,
 )
-from backend.app.market_data.option_chain_client import (
-    OptionChainLookupError,
-    fetch_option_chain,
-)
+from backend.app.market_data.option_chain_client import OptionChainLookupError
 from backend.app.strategies.expiry_engine import find_atm_strike
 
 from .analysis import (
@@ -104,17 +100,17 @@ class OptionAnalyticsEngine:
             self._task.cancel()
         logger.info("Option Analytics Engine stopped")
 
-    async def _fetch_chain(self, token: str) -> List[Dict[str, Any]]:
+    async def _fetch_chain(self, provider, token: str) -> List[Dict[str, Any]]:
         """`current_week` legitimately returns zero rows for some
         underlyings/times (verified against the live API), so fall back to
         the next real expiry rather than treating that as an error.
         """
         try:
-            return await fetch_option_chain(self.config.underlying_key, token, "current_week")
+            return await provider.fetch_option_chain(self.config.underlying_key, token, "current_week")
         except OptionChainLookupError:
-            return await fetch_option_chain(self.config.underlying_key, token, "next_week")
+            return await provider.fetch_option_chain(self.config.underlying_key, token, "next_week")
 
-    async def _get_daily_closes(self, token: str) -> Optional[List[float]]:
+    async def _get_daily_closes(self, provider, token: str) -> Optional[List[float]]:
         """Cached per IST calendar day. Returns None (not a raised error)
         when the fetch fails — a missing VRP forecast should degrade that
         one signal, not crash the whole poll loop, same treatment as a
@@ -127,7 +123,7 @@ class OptionAnalyticsEngine:
         to_date = today
         from_date = today - timedelta(days=self.config.historical_lookback_days)
         try:
-            candles = await fetch_historical_candles(
+            candles = await provider.fetch_historical_candles(
                 self.config.underlying_key, token, to_date, from_date
             )
         except HistoricalCandleLookupError as exc:
@@ -333,8 +329,10 @@ class OptionAnalyticsEngine:
     async def _poll_loop(self):
         while self.running:
             try:
-                token = upstox_auth.load_token()
-                if not token:
+                provider = active_broker.get_active_provider()
+                auth = active_broker.get_active_auth_module()
+                token = auth.load_token() if auth else None
+                if not token or provider is None:
                     await event_bus.publish("option_analytics", {
                         "sufficient_data": False,
                         "reason": "No saved Upstox token — log in via /api/v1/broker/upstox/login.",
@@ -342,8 +340,8 @@ class OptionAnalyticsEngine:
                     await asyncio.sleep(self.config.poll_interval_seconds)
                     continue
 
-                chain = await self._fetch_chain(token)
-                daily_closes = await self._get_daily_closes(token)
+                chain = await self._fetch_chain(provider, token)
+                daily_closes = await self._get_daily_closes(provider, token)
                 snapshot = self.analyse(chain, daily_closes)
                 self.latest = snapshot
                 await event_bus.publish("option_analytics", snapshot.model_dump(mode="json"))

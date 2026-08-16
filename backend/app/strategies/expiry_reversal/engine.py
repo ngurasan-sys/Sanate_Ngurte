@@ -4,7 +4,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from backend.app.core import upstox_auth
+from backend.app.core.active_broker import active_broker
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.expiry_calendar import ExpiryLookupError, expiry_calendar
 from backend.app.market_data.models import Candle, Tick
@@ -101,7 +101,8 @@ class ExpiryReversalEngine:
         day. No saved token, or a failed lookup, leaves is_expiry_day at
         its last known value — never guessed.
         """
-        token = upstox_auth.load_token()
+        auth = active_broker.get_active_auth_module()
+        token = auth.load_token() if auth else None
         if not token:
             return
         try:

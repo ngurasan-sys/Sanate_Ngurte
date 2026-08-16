@@ -5,7 +5,7 @@ SL/target-triggered exit — goes through the exact same DECISION_CREATED ->
 RiskEngine -> ExecutionEngine -> OrderGateway pipeline the automated
 strategies use. There is no separate/faster path to the broker here: a
 manual order still defaults to DRY_RUN, still needs both the
-UPSTOX_EXECUTION_MODE=LIVE env var and the runtime arm switch to actually
+EXECUTION_MODE=LIVE env var and the runtime arm switch to actually
 reach a broker, and still passes through every real risk-limit check
 (quantity cap, max open positions, daily loss, daily order count, market
 hours, kill switch). "Manual" describes who chose the trade, not a
@@ -29,14 +29,10 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from backend.app.core import upstox_auth
+from backend.app.core.active_broker import active_broker
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.lot_sizes import LOT_SIZES, get_lot_size
-from backend.app.market_data.option_chain_client import (
-    OptionChainLookupError,
-    fetch_option_chain,
-)
-from backend.app.market_data.symbols import INDEX_INSTRUMENT_KEYS
+from backend.app.market_data.option_chain_client import OptionChainLookupError
 from backend.app.strategies.expiry_engine import find_atm_strike
 
 from .analysis import compute_weighted_entry_price, extract_leg, resolve_strike_row, should_exit
@@ -91,7 +87,8 @@ class ManualTradingEngine:
             )
 
     async def _require_token(self) -> str:
-        token = upstox_auth.load_token()
+        auth = active_broker.get_active_auth_module()
+        token = auth.load_token() if auth else None
         if not token:
             raise ManualTradingError(
                 "No saved Upstox token — log in via /api/v1/broker/upstox/login."
@@ -99,14 +96,17 @@ class ManualTradingEngine:
         return token
 
     async def _fetch_chain(self, underlying: str, expiry_date: str, token: str) -> List[Dict[str, Any]]:
-        if underlying not in INDEX_INSTRUMENT_KEYS:
+        provider = active_broker.get_active_provider()
+        if provider is None:
+            raise ManualTradingError(f"No active broker — cannot resolve {underlying}.")
+        if underlying not in ("NIFTY", "SENSEX", "BANKNIFTY"):
             raise ManualTradingError(
                 f"Unsupported underlying {underlying!r}. Supported: "
-                f"{sorted(INDEX_INSTRUMENT_KEYS.keys())}."
+                f"{sorted(('NIFTY', 'SENSEX', 'BANKNIFTY'))}."
             )
-        instrument_key = INDEX_INSTRUMENT_KEYS[underlying]
+        instrument_key = provider.instrument_key_for_index(underlying)
         try:
-            return await fetch_option_chain(instrument_key, token, expiry_date)
+            return await provider.fetch_option_chain(instrument_key, token, expiry_date)
         except OptionChainLookupError as exc:
             # "current_week" legitimately returns zero rows for some
             # underlyings/times (verified against the live API — same
@@ -115,13 +115,21 @@ class ManualTradingEngine:
             # as a hard failure to a trader trying to place an order.
             if expiry_date == "current_week":
                 try:
-                    return await fetch_option_chain(instrument_key, token, "next_week")
+                    return await provider.fetch_option_chain(instrument_key, token, "next_week")
                 except OptionChainLookupError as fallback_exc:
                     raise ManualTradingError(
                         f"Option chain fetch failed for {underlying} (tried current_week "
                         f"and next_week): {fallback_exc}"
                     )
             raise ManualTradingError(f"Option chain fetch failed for {underlying}: {exc}")
+
+    def get_open_position_blocker(self) -> Optional[str]:
+        open_positions = [p for p in self.positions.values() if p.status == "OPEN"]
+        if not open_positions:
+            return None
+        return f"{len(open_positions)} open position(s): " + ", ".join(
+            f"{p.underlying} {p.strike} {p.option_type}" for p in open_positions
+        )
 
     async def place_order(self, request: ManualOrderRequest) -> ManualPosition:
         if request.lots <= 0:
@@ -368,7 +376,8 @@ class ManualTradingEngine:
             try:
                 open_positions = [p for p in self.positions.values() if p.status == "OPEN"]
                 if open_positions:
-                    token = upstox_auth.load_token()
+                    auth = active_broker.get_active_auth_module()
+                    token = auth.load_token() if auth else None
                     if token:
                         await self._check_positions(open_positions, token)
             except asyncio.CancelledError:

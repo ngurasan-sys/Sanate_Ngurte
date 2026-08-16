@@ -14,7 +14,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from backend.app.core import active_broker as ab_module
 from backend.app.market_data.option_chain_client import OptionChainLookupError
+from backend.app.strategies.manual_trading import engine as engine_module
 from backend.app.strategies.manual_trading.engine import ManualTradingEngine, ManualTradingError
 from backend.app.strategies.manual_trading.models import ManualOrderRequest
 
@@ -32,9 +34,38 @@ def _row(strike, call_ltp=100.0, put_ltp=90.0, call_key="CE1", put_key="PE1"):
 
 CHAIN = [_row(24400), _row(24500), _row(24600)]
 
-PATCH_TOKEN = "backend.app.strategies.manual_trading.engine.upstox_auth.load_token"
-PATCH_FETCH = "backend.app.strategies.manual_trading.engine.fetch_option_chain"
 PATCH_PUBLISH = "backend.app.strategies.manual_trading.engine.event_bus.publish"
+
+
+class _FakeAuth:
+    def __init__(self, token):
+        self._token = token
+
+    def load_token(self):
+        return self._token
+
+
+class _FakeProvider:
+    def __init__(self, fetch_mock=None):
+        self.fetch_option_chain = fetch_mock or AsyncMock(return_value=CHAIN)
+
+    def instrument_key_for_index(self, underlying):
+        return {"NIFTY": "NSE_INDEX|Nifty 50", "BANKNIFTY": "NSE_INDEX|Nifty Bank",
+                "SENSEX": "BSE_INDEX|SENSEX"}[underlying]
+
+
+def _activate(monkeypatch, token="fake-token", provider=None):
+    """Registers a fake broker as active for manual_trading.engine, mirroring
+    test_order_gateway.py's _activate_upstox_for_tests pattern. Returns the
+    provider so tests can further re-patch provider.fetch_option_chain
+    mid-test the way they used to re-patch the module-level function.
+    """
+    provider = provider or _FakeProvider()
+    registry = ab_module.ActiveBrokerRegistry()
+    registry.register_broker("upstox", provider=provider, auth_module=_FakeAuth(token))
+    registry._active_broker_id = "upstox"
+    monkeypatch.setattr(engine_module, "active_broker", registry)
+    return provider
 
 
 def _order(**kw):
@@ -65,7 +96,7 @@ def _entry_decision_id(position) -> str:
 
 
 @pytest.mark.asyncio
-async def test_place_order_starts_pending_not_open():
+async def test_place_order_starts_pending_not_open(monkeypatch):
     """The core fix this whole file exists to prove: a submitted-but-not
     -yet-confirmed order must never read as OPEN."""
     engine = ManualTradingEngine()
@@ -73,9 +104,8 @@ async def test_place_order_starts_pending_not_open():
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await engine.place_order(_order(lots=2))
 
     assert position.status == "PENDING"
@@ -85,16 +115,15 @@ async def test_place_order_starts_pending_not_open():
 
 
 @pytest.mark.asyncio
-async def test_place_order_becomes_open_once_execution_confirms_dry_run():
+async def test_place_order_becomes_open_once_execution_confirms_dry_run(monkeypatch):
     engine = ManualTradingEngine()
     published = []
 
     async def capture(topic, payload):
         published.append((topic, payload))
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await engine.place_order(_order(lots=2))
         await _confirm_execution(engine, _entry_decision_id(position), status="DRY_RUN")
 
@@ -108,15 +137,14 @@ async def test_place_order_becomes_open_once_execution_confirms_dry_run():
 
 
 @pytest.mark.asyncio
-async def test_place_order_closed_when_execution_rejects():
+async def test_place_order_closed_when_execution_rejects(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await engine.place_order(_order())
         await _confirm_execution(engine, _entry_decision_id(position), status="REJECTED")
 
@@ -127,7 +155,7 @@ async def test_place_order_closed_when_execution_rejects():
 
 
 @pytest.mark.asyncio
-async def test_place_order_closed_when_risk_rejects():
+async def test_place_order_closed_when_risk_rejects(monkeypatch):
     """The exact scenario found live: risk rejects (e.g. outside market
     hours, over a limit) -> position must never read as OPEN."""
     engine = ManualTradingEngine()
@@ -135,9 +163,8 @@ async def test_place_order_closed_when_risk_rejects():
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await engine.place_order(_order())
         await _reject_at_risk(engine, _entry_decision_id(position), reason="Market not open yet.")
 
@@ -148,15 +175,14 @@ async def test_place_order_closed_when_risk_rejects():
 
 
 @pytest.mark.asyncio
-async def test_place_order_resolves_atm_strike_when_none_given():
+async def test_place_order_resolves_atm_strike_when_none_given(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await engine.place_order(_order(strike=None))
 
     assert position.strike == 24500  # closest to underlying_spot_price=24500.0
@@ -187,15 +213,15 @@ async def test_place_order_rejects_unsupported_underlying():
 
 
 @pytest.mark.asyncio
-async def test_place_order_without_saved_token_raises():
+async def test_place_order_without_saved_token_raises(monkeypatch):
     engine = ManualTradingEngine()
-    with patch(PATCH_TOKEN, return_value=None):
-        with pytest.raises(ManualTradingError, match="No saved Upstox token"):
-            await engine.place_order(_order())
+    _activate(monkeypatch, token=None)
+    with pytest.raises(ManualTradingError, match="No saved Upstox token"):
+        await engine.place_order(_order())
 
 
 @pytest.mark.asyncio
-async def test_place_order_falls_back_to_next_week_when_current_week_is_empty():
+async def test_place_order_falls_back_to_next_week_when_current_week_is_empty(monkeypatch):
     """Real, observed Upstox behaviour: current_week legitimately returns
     zero rows for some underlyings/times. Confirmed live against this
     exact engine — the first version of this fallback was missing and
@@ -207,9 +233,8 @@ async def test_place_order_falls_back_to_next_week_when_current_week_is_empty():
 
     fetch_mock = AsyncMock(side_effect=[OptionChainLookupError("no strikes"), CHAIN])
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=fetch_mock), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch, provider=_FakeProvider(fetch_mock))
+    with patch(PATCH_PUBLISH, new=capture):
         position = await engine.place_order(_order())
 
     assert position.status == "PENDING"
@@ -219,28 +244,26 @@ async def test_place_order_falls_back_to_next_week_when_current_week_is_empty():
 
 
 @pytest.mark.asyncio
-async def test_place_order_raises_when_both_expiries_fail():
+async def test_place_order_raises_when_both_expiries_fail(monkeypatch):
     engine = ManualTradingEngine()
     fetch_mock = AsyncMock(side_effect=[
         OptionChainLookupError("no strikes (current_week)"),
         OptionChainLookupError("no strikes (next_week)"),
     ])
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=fetch_mock):
-        with pytest.raises(ManualTradingError, match="tried current_week and next_week"):
-            await engine.place_order(_order())
+    _activate(monkeypatch, provider=_FakeProvider(fetch_mock))
+    with pytest.raises(ManualTradingError, match="tried current_week and next_week"):
+        await engine.place_order(_order())
 
 
 @pytest.mark.asyncio
-async def test_place_order_does_not_fall_back_when_next_week_explicitly_requested():
+async def test_place_order_does_not_fall_back_when_next_week_explicitly_requested(monkeypatch):
     engine = ManualTradingEngine()
     fetch_mock = AsyncMock(side_effect=OptionChainLookupError("no strikes"))
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=fetch_mock):
-        with pytest.raises(ManualTradingError, match="Option chain fetch failed for NIFTY"):
-            await engine.place_order(_order(expiry_date="next_week"))
+    _activate(monkeypatch, provider=_FakeProvider(fetch_mock))
+    with pytest.raises(ManualTradingError, match="Option chain fetch failed for NIFTY"):
+        await engine.place_order(_order(expiry_date="next_week"))
 
     assert fetch_mock.call_count == 1
 
@@ -254,21 +277,20 @@ async def _open_position(engine, **order_kw):
 
 
 @pytest.mark.asyncio
-async def test_add_pyramid_updates_weighted_entry_price_and_quantity_once_confirmed():
+async def test_add_pyramid_updates_weighted_entry_price_and_quantity_once_confirmed(monkeypatch):
     engine = ManualTradingEngine()
     published = []
 
     async def capture(topic, payload):
         published.append((topic, payload))
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    provider = _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine, lots=1, pyramid_lot_size=1)  # entry @ 100, qty 65
         published.clear()
 
         pyramid_chain = [_row(24500, call_ltp=120.0, call_key="CE1")]
-        with patch(PATCH_FETCH, new=AsyncMock(return_value=pyramid_chain)):
+        with patch.object(provider, "fetch_option_chain", new=AsyncMock(return_value=pyramid_chain)):
             returned = await engine.add_pyramid(position.position_id)
             # Unconfirmed: quantity/price must NOT have moved yet.
             assert returned.quantity == 65
@@ -289,18 +311,17 @@ async def test_add_pyramid_updates_weighted_entry_price_and_quantity_once_confir
 
 
 @pytest.mark.asyncio
-async def test_add_pyramid_leaves_position_unchanged_when_rejected():
+async def test_add_pyramid_leaves_position_unchanged_when_rejected(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    provider = _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine, lots=1, pyramid_lot_size=1)
 
-        with patch(PATCH_FETCH, new=AsyncMock(return_value=[_row(24500, call_ltp=120.0, call_key="CE1")])):
+        with patch.object(provider, "fetch_option_chain", new=AsyncMock(return_value=[_row(24500, call_ltp=120.0, call_key="CE1")])):
             await engine.add_pyramid(position.position_id)
 
         decision_id = next(iter(engine._pending_pyramids))
@@ -313,15 +334,14 @@ async def test_add_pyramid_leaves_position_unchanged_when_rejected():
 
 
 @pytest.mark.asyncio
-async def test_add_pyramid_disabled_when_pyramid_lot_size_zero():
+async def test_add_pyramid_disabled_when_pyramid_lot_size_zero(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine, pyramid_lot_size=0)
 
         with pytest.raises(ManualTradingError, match="pyramiding disabled"):
@@ -336,15 +356,14 @@ async def test_add_pyramid_unknown_position_raises():
 
 
 @pytest.mark.asyncio
-async def test_add_pyramid_rejects_when_position_still_pending():
+async def test_add_pyramid_rejects_when_position_still_pending(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await engine.place_order(_order())  # never confirmed -> still PENDING
 
         with pytest.raises(ManualTradingError, match="not OPEN"):
@@ -352,16 +371,15 @@ async def test_add_pyramid_rejects_when_position_still_pending():
 
 
 @pytest.mark.asyncio
-async def test_close_position_stays_open_until_execution_confirms():
+async def test_close_position_stays_open_until_execution_confirms(monkeypatch):
     engine = ManualTradingEngine()
     published = []
 
     async def capture(topic, payload):
         published.append((topic, payload))
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine, lots=3)
         published.clear()
         returned = await engine.close_position(position.position_id, reason="MANUAL_CLOSE")
@@ -381,15 +399,14 @@ async def test_close_position_stays_open_until_execution_confirms():
 
 
 @pytest.mark.asyncio
-async def test_close_position_stays_open_when_execution_rejects_exit():
+async def test_close_position_stays_open_when_execution_rejects_exit(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine, lots=1)
         await engine.close_position(position.position_id)
 
@@ -402,15 +419,14 @@ async def test_close_position_stays_open_when_execution_rejects_exit():
 
 
 @pytest.mark.asyncio
-async def test_close_position_already_closed_raises():
+async def test_close_position_already_closed_raises(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine)
         await engine.close_position(position.position_id)
         await _confirm_execution(engine, next(iter(engine._pending_exits)), status="DRY_RUN")
@@ -420,7 +436,7 @@ async def test_close_position_already_closed_raises():
 
 
 @pytest.mark.asyncio
-async def test_monitor_loop_auto_closes_on_stop_loss_hit():
+async def test_monitor_loop_auto_closes_on_stop_loss_hit(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
@@ -429,14 +445,12 @@ async def test_monitor_loop_auto_closes_on_stop_loss_hit():
                 "decision_id": payload["decision_id"], "status": "DRY_RUN",
             })
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    provider = _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine, stop_loss=50.0, target=150.0)
 
         crashed_chain = [_row(24500, call_ltp=40.0, call_key="CE1")]  # below stop_loss
-        with patch(PATCH_FETCH, new=AsyncMock(return_value=crashed_chain)), \
-             patch(PATCH_TOKEN, return_value="fake-token"):
+        with patch.object(provider, "fetch_option_chain", new=AsyncMock(return_value=crashed_chain)):
             await engine._check_positions([position], "fake-token")
 
     assert engine.positions[position.position_id].status == "CLOSED"
@@ -444,20 +458,19 @@ async def test_monitor_loop_auto_closes_on_stop_loss_hit():
 
 
 @pytest.mark.asyncio
-async def test_monitor_loop_auto_closes_on_target_hit():
+async def test_monitor_loop_auto_closes_on_target_hit(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         if "_EXIT_" in payload.get("decision_id", ""):
             await engine._on_execution_update({"decision_id": payload["decision_id"], "status": "DRY_RUN"})
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    provider = _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine, stop_loss=50.0, target=150.0)
 
         rallied_chain = [_row(24500, call_ltp=160.0, call_key="CE1")]  # above target
-        with patch(PATCH_FETCH, new=AsyncMock(return_value=rallied_chain)):
+        with patch.object(provider, "fetch_option_chain", new=AsyncMock(return_value=rallied_chain)):
             await engine._check_positions([position], "fake-token")
 
     assert engine.positions[position.position_id].status == "CLOSED"
@@ -465,19 +478,18 @@ async def test_monitor_loop_auto_closes_on_target_hit():
 
 
 @pytest.mark.asyncio
-async def test_monitor_loop_leaves_position_open_within_range():
+async def test_monitor_loop_leaves_position_open_within_range(monkeypatch):
     engine = ManualTradingEngine()
 
     async def capture(topic, payload):
         pass
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch(PATCH_PUBLISH, new=capture):
+    provider = _activate(monkeypatch)
+    with patch(PATCH_PUBLISH, new=capture):
         position = await _open_position(engine, stop_loss=50.0, target=150.0)
 
         flat_chain = [_row(24500, call_ltp=105.0, call_key="CE1")]
-        with patch(PATCH_FETCH, new=AsyncMock(return_value=flat_chain)):
+        with patch.object(provider, "fetch_option_chain", new=AsyncMock(return_value=flat_chain)):
             await engine._check_positions([position], "fake-token")
 
     assert engine.positions[position.position_id].status == "OPEN"

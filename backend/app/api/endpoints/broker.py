@@ -4,7 +4,6 @@ from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from backend.app.core import upstox_auth
-from backend.app.market_data.upstox_v3 import upstox_client
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +67,6 @@ async def upstox_callback(code: str = Query(...), state: str = Query(None)):
     try:
         token = await upstox_auth.exchange_code_for_token(code)
         upstox_auth.save_token(token)
-        configured = upstox_client.configure(token)
-        await upstox_client.connect()
     except upstox_auth.UpstoxAuthError as exc:
         logger.error(f"Upstox token exchange failed: {exc}")
         return HTMLResponse(content=_result_page("ERROR", str(exc)), status_code=502)
@@ -82,17 +79,6 @@ async def upstox_callback(code: str = Query(...), state: str = Query(None)):
                 "ERROR", "Failed to complete Upstox connection setup"
             ),
             status_code=500,
-        )
-
-    if not configured:
-        # The token really was saved, so this isn't a failure — but claiming a
-        # live feed when we're still in mock mode would be dishonest.
-        return HTMLResponse(
-            content=_result_page(
-                "CONNECTED",
-                "Token saved, but the Upstox SDK isn't installed — "
-                "running in mock mode.",
-            )
         )
 
     return HTMLResponse(content=_result_page("CONNECTED"))

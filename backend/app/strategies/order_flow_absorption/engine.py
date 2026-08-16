@@ -29,11 +29,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from backend.app.core import upstox_auth
+from backend.app.core.active_broker import active_broker
 from backend.app.core.event_bus import event_bus
 from backend.app.market_data.lot_sizes import get_lot_size
-from backend.app.market_data.option_chain_client import OptionChainLookupError, fetch_option_chain
-from backend.app.market_data.symbols import INDEX_INSTRUMENT_KEYS
+from backend.app.market_data.option_chain_client import OptionChainLookupError
 from backend.app.order_flow.footprint_candle import FootprintCandle
 from backend.app.order_flow.footprint_processor import footprint_processor
 
@@ -111,6 +110,12 @@ class OFAOEngine:
 
     def get_snapshot(self, instrument_key: str) -> Optional[dict]:
         return self._latest_snapshot.get(instrument_key)
+
+    def get_open_position_blocker(self) -> Optional[str]:
+        active = self.state_machine.active_setups()
+        if not active:
+            return None
+        return f"{len(active)} active setup(s): {', '.join(active)}."
 
     # -----------------------------------------------------------------
     # Event bus wiring
@@ -421,18 +426,21 @@ class OFAOEngine:
         if intent is None:
             return
 
-        token = upstox_auth.load_token()
-        if not token:
+        provider = active_broker.get_active_provider()
+        auth = active_broker.get_active_auth_module()
+        token = auth.load_token() if auth else None
+        if not token or provider is None:
             self._block_order(instrument_key, ctx, "No Upstox token — cannot resolve option chain.", now)
             return
 
-        index_key = INDEX_INSTRUMENT_KEYS.get(underlying)
-        if index_key is None:
+        try:
+            index_key = provider.instrument_key_for_index(underlying)
+        except KeyError:
             self._block_order(instrument_key, ctx, f"No index instrument key configured for {underlying}.", now)
             return
 
         try:
-            chain = await fetch_option_chain(index_key, token, "current_week")
+            chain = await provider.fetch_option_chain(index_key, token, "current_week")
         except OptionChainLookupError as exc:
             self._block_order(instrument_key, ctx, f"Option chain fetch failed: {exc}", now)
             return

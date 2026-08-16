@@ -3,10 +3,28 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from datetime import datetime, timedelta, timezone
 
+from backend.app.core import active_broker as ab_module
+from backend.app.strategies.expiry_reversal import engine as engine_module
 from backend.app.strategies.expiry_reversal.engine import ExpiryReversalEngine
 from backend.app.strategies.expiry_reversal.models import ExpiryReversalConfig
 from backend.app.market_data.expiry_calendar import ExpiryLookupError
 from backend.app.market_data.models import Candle, Tick
+
+
+class _FakeAuth:
+    def __init__(self, token):
+        self._token = token
+
+    def load_token(self):
+        return self._token
+
+
+def _activate(monkeypatch, token):
+    registry = ab_module.ActiveBrokerRegistry()
+    registry.register_broker("upstox", auth_module=_FakeAuth(token))
+    registry._active_broker_id = "upstox"
+    monkeypatch.setattr(engine_module, "active_broker", registry)
+    return registry
 
 
 @pytest.fixture
@@ -225,12 +243,10 @@ async def test_get_state_snapshot_reflects_real_state(engine):
 
 
 @pytest.mark.asyncio
-async def test_refresh_expiry_flag_no_token_leaves_value_unchanged(engine):
+async def test_refresh_expiry_flag_no_token_leaves_value_unchanged(engine, monkeypatch):
     engine.config.is_expiry_day = False
+    _activate(monkeypatch, token=None)
     with patch(
-        "backend.app.strategies.expiry_reversal.engine.upstox_auth.load_token",
-        return_value=None,
-    ), patch(
         "backend.app.strategies.expiry_reversal.engine.expiry_calendar.is_today_expiry_day",
         new=AsyncMock(),
     ) as mock_lookup:
@@ -241,11 +257,9 @@ async def test_refresh_expiry_flag_no_token_leaves_value_unchanged(engine):
 
 
 @pytest.mark.asyncio
-async def test_refresh_expiry_flag_updates_from_real_lookup(engine):
+async def test_refresh_expiry_flag_updates_from_real_lookup(engine, monkeypatch):
+    _activate(monkeypatch, token="saved-token")
     with patch(
-        "backend.app.strategies.expiry_reversal.engine.upstox_auth.load_token",
-        return_value="saved-token",
-    ), patch(
         "backend.app.strategies.expiry_reversal.engine.expiry_calendar.is_today_expiry_day",
         new=AsyncMock(return_value=True),
     ) as mock_lookup:
@@ -256,12 +270,10 @@ async def test_refresh_expiry_flag_updates_from_real_lookup(engine):
 
 
 @pytest.mark.asyncio
-async def test_refresh_expiry_flag_lookup_failure_keeps_last_known_value(engine):
+async def test_refresh_expiry_flag_lookup_failure_keeps_last_known_value(engine, monkeypatch):
     engine.config.is_expiry_day = True
+    _activate(monkeypatch, token="saved-token")
     with patch(
-        "backend.app.strategies.expiry_reversal.engine.upstox_auth.load_token",
-        return_value="saved-token",
-    ), patch(
         "backend.app.strategies.expiry_reversal.engine.expiry_calendar.is_today_expiry_day",
         new=AsyncMock(side_effect=ExpiryLookupError("boom")),
     ):
