@@ -265,6 +265,31 @@ async def test_transport_failure_reports_unknown_not_submitted(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_no_active_broker_is_rejected_before_network(monkeypatch):
+    """SANDBOX/LIVE must never silently fall back to some default broker.
+    With no execution adapter registered for the active broker, place_order
+    must reject cleanly rather than crash or guess a broker."""
+    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx-token")
+
+    # Override the autouse _activate_upstox_for_tests fixture's registry:
+    # a registry with no active broker at all.
+    registry = ab_module.ActiveBrokerRegistry()
+    registry._active_broker_id = None
+    monkeypatch.setattr(gw_module, "active_broker", registry)
+
+    def explode(*a, **kw):
+        raise AssertionError("must not call the network with no active broker")
+
+    monkeypatch.setattr(ua_module.httpx, "AsyncClient", explode)
+
+    result = await OrderGateway().place_order(_req())
+    assert result.status == "REJECTED"
+    assert result.is_real_submission is False
+    assert result.order_id is None
+
+
+@pytest.mark.asyncio
 async def test_200_without_order_id_is_not_submitted(monkeypatch):
     monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
     monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx")
