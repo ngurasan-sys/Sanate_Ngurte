@@ -76,7 +76,7 @@ async def _place_order_through_full_chain(risk_limits: RiskLimits, lots: int = 1
 
 @pytest.mark.asyncio
 async def test_manual_order_within_limits_reaches_dry_run_execution(monkeypatch):
-    monkeypatch.delenv("UPSTOX_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("EXECUTION_MODE", raising=False)
     manual_engine, position, published = await _place_order_through_full_chain(RiskLimits(), lots=1)
     topics = [t for t, _ in published]
 
@@ -85,7 +85,7 @@ async def test_manual_order_within_limits_reaches_dry_run_execution(monkeypatch)
     assert "EXECUTION_UPDATE" in topics
 
     exec_update = next(p for t, p in published if t == "EXECUTION_UPDATE")
-    # Default env: no UPSTOX_EXECUTION_MODE=LIVE, no arm switch -> DRY_RUN,
+    # Default env: no EXECUTION_MODE=LIVE, no arm switch -> DRY_RUN,
     # never a real broker submission, no matter how the manual order was placed.
     assert exec_update["status"] == "DRY_RUN"
     assert exec_update["order_id"] is None

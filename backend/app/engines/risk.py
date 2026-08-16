@@ -71,7 +71,7 @@ class RiskEngine:
         The algo capital budget follows the same real-submission-only rule
         (DRY_RUN never spends real capital). The pyramid tier counter is
         looser on purpose: it advances on DRY_RUN too, so tier progression
-        is actually testable without needing UPSTOX_EXECUTION_MODE=LIVE.
+        is actually testable without needing EXECUTION_MODE=LIVE.
         """
         status = exec_data.get("status")
         if status == "SUBMITTED":

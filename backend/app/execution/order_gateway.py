@@ -13,10 +13,10 @@ of the kind:
   SANDBOX             Sends to Upstox's sandbox host using a separate
                       sandbox token. No real money, no real position.
   LIVE                Sends to the real HFT host with the real token.
-                      REAL MONEY MOVES. Requires UPSTOX_EXECUTION_MODE
+                      REAL MONEY MOVES. Requires EXECUTION_MODE
                       to be set to exactly "LIVE" *and* a second,
                       independent confirmation: either
-                      UPSTOX_LIVE_TRADING_CONFIRMED=YES in the
+                      LIVE_TRADING_CONFIRMED=YES in the
                       environment, or the runtime arm switch toggled
                       from the frontend's execution-control panel
                       (backend.app.execution.runtime_state). The
@@ -97,28 +97,28 @@ class OrderResult:
 
 
 def resolve_mode() -> ExecutionMode:
-    """LIVE requires UPSTOX_EXECUTION_MODE=LIVE AND a second, independent
-    confirmation — either UPSTOX_LIVE_TRADING_CONFIRMED=YES in the
+    """LIVE requires EXECUTION_MODE=LIVE AND a second, independent
+    confirmation — either LIVE_TRADING_CONFIRMED=YES in the
     environment, or the runtime arm switch armed via the frontend's
     execution-control panel. Two independent switches, so no single
     misconfigured variable or forgotten toggle can silently arm real
     trading.
     """
-    raw = (os.environ.get("UPSTOX_EXECUTION_MODE") or "DRY_RUN").strip().upper()
+    raw = (os.environ.get("EXECUTION_MODE") or "DRY_RUN").strip().upper()
 
     try:
         mode = ExecutionMode(raw)
     except ValueError:
         logger.warning(
-            "Unrecognised UPSTOX_EXECUTION_MODE=%r — falling back to DRY_RUN.", raw
+            "Unrecognised EXECUTION_MODE=%r — falling back to DRY_RUN.", raw
         )
         return ExecutionMode.DRY_RUN
 
     if mode is ExecutionMode.LIVE:
-        confirmed = (os.environ.get("UPSTOX_LIVE_TRADING_CONFIRMED") or "").strip().upper()
+        confirmed = (os.environ.get("LIVE_TRADING_CONFIRMED") or "").strip().upper()
         if confirmed != "YES" and not execution_runtime_state.is_armed():
             logger.error(
-                "UPSTOX_EXECUTION_MODE=LIVE but neither UPSTOX_LIVE_TRADING_CONFIRMED=YES "
+                "EXECUTION_MODE=LIVE but neither LIVE_TRADING_CONFIRMED=YES "
                 "nor the runtime arm switch is set. Refusing to arm live trading; "
                 "falling back to DRY_RUN."
             )

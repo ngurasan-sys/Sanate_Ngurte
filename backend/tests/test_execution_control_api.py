@@ -21,7 +21,7 @@ def _reset_state():
 
 
 def test_status_reports_disarmed_dry_run_by_default(monkeypatch):
-    monkeypatch.delenv("UPSTOX_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("EXECUTION_MODE", raising=False)
 
     response = client.get("/api/v1/execution/status")
 

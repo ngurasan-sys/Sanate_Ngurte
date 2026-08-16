@@ -1,7 +1,7 @@
 """Runtime control surface for live order execution.
 
 Exposes the second arm switch (see execution.runtime_state) and the risk
-kill switch to the frontend. Never changes UPSTOX_EXECUTION_MODE itself —
+kill switch to the frontend. Never changes EXECUTION_MODE itself —
 that env var is the first, fixed-at-process-start switch and stays
 outside the frontend's reach on purpose.
 """
@@ -33,7 +33,7 @@ class HaltRequest(BaseModel):
 
 
 def _status_payload() -> dict:
-    env_mode = (os.environ.get("UPSTOX_EXECUTION_MODE") or "DRY_RUN").strip().upper()
+    env_mode = (os.environ.get("EXECUTION_MODE") or "DRY_RUN").strip().upper()
     arm = execution_runtime_state.snapshot()
     limits = risk_engine.limits
     state = risk_engine.state

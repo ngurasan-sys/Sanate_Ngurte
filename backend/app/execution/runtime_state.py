@@ -1,7 +1,7 @@
 """In-memory runtime arm switch for LIVE trading.
 
 This is the second of the two independent switches required to place a
-real order (see order_gateway.resolve_mode). UPSTOX_EXECUTION_MODE=LIVE
+real order (see order_gateway.resolve_mode). EXECUTION_MODE=LIVE
 in the environment is the first switch and is fixed at process start;
 this one is toggled at runtime via the frontend's execution-control panel
 and always resets to disarmed when the process restarts, so nobody can

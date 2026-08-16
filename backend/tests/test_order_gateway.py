@@ -77,53 +77,53 @@ def _req(**kw):
 # --------------------------- mode resolution ---------------------------
 
 def test_default_mode_is_dry_run(monkeypatch):
-    monkeypatch.delenv("UPSTOX_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("EXECUTION_MODE", raising=False)
     assert resolve_mode() is ExecutionMode.DRY_RUN
 
 
 def test_unrecognised_mode_falls_back_to_dry_run(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "YOLO")
+    monkeypatch.setenv("EXECUTION_MODE", "YOLO")
     assert resolve_mode() is ExecutionMode.DRY_RUN
 
 
 def test_live_mode_requires_second_confirmation_switch(monkeypatch):
     # A single env var must NOT be able to arm real-money trading.
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "LIVE")
-    monkeypatch.delenv("UPSTOX_LIVE_TRADING_CONFIRMED", raising=False)
+    monkeypatch.setenv("EXECUTION_MODE", "LIVE")
+    monkeypatch.delenv("LIVE_TRADING_CONFIRMED", raising=False)
     assert resolve_mode() is ExecutionMode.DRY_RUN
 
 
 def test_live_mode_requires_confirmation_to_be_exactly_yes(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "LIVE")
-    monkeypatch.setenv("UPSTOX_LIVE_TRADING_CONFIRMED", "true")
+    monkeypatch.setenv("EXECUTION_MODE", "LIVE")
+    monkeypatch.setenv("LIVE_TRADING_CONFIRMED", "true")
     assert resolve_mode() is ExecutionMode.DRY_RUN
 
 
 def test_live_mode_armed_only_with_both_switches(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "LIVE")
-    monkeypatch.setenv("UPSTOX_LIVE_TRADING_CONFIRMED", "YES")
+    monkeypatch.setenv("EXECUTION_MODE", "LIVE")
+    monkeypatch.setenv("LIVE_TRADING_CONFIRMED", "YES")
     assert resolve_mode() is ExecutionMode.LIVE
 
 
 def test_live_mode_armed_via_runtime_switch_alone(monkeypatch):
     # The runtime arm switch (toggled from the frontend) is an
     # independent alternative to the env-var confirmation — either one
-    # satisfies the second switch, but UPSTOX_EXECUTION_MODE=LIVE is
+    # satisfies the second switch, but EXECUTION_MODE=LIVE is
     # still required as the first.
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "LIVE")
-    monkeypatch.delenv("UPSTOX_LIVE_TRADING_CONFIRMED", raising=False)
+    monkeypatch.setenv("EXECUTION_MODE", "LIVE")
+    monkeypatch.delenv("LIVE_TRADING_CONFIRMED", raising=False)
     execution_runtime_state.arm(note="test")
     assert resolve_mode() is ExecutionMode.LIVE
 
 
 def test_runtime_switch_alone_without_live_env_mode_stays_dry_run(monkeypatch):
-    monkeypatch.delenv("UPSTOX_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("EXECUTION_MODE", raising=False)
     execution_runtime_state.arm(note="test")
     assert resolve_mode() is ExecutionMode.DRY_RUN
 
 
 def test_sandbox_mode_needs_no_extra_confirmation(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
     assert resolve_mode() is ExecutionMode.SANDBOX
 
 
@@ -153,7 +153,7 @@ def test_payload_includes_tag_only_when_set():
 
 @pytest.mark.asyncio
 async def test_dry_run_makes_no_network_call(monkeypatch):
-    monkeypatch.delenv("UPSTOX_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("EXECUTION_MODE", raising=False)
 
     def explode(*a, **kw):
         raise AssertionError("DRY_RUN must never open a network client")
@@ -172,7 +172,7 @@ async def test_dry_run_makes_no_network_call(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sandbox_submission_returns_order_id(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
     monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx-token")
 
     def handler(request):
@@ -192,7 +192,7 @@ async def test_sandbox_submission_returns_order_id(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sandbox_without_token_is_rejected_before_network(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
     monkeypatch.delenv("UPSTOX_SANDBOX_ACCESS_TOKEN", raising=False)
 
     def explode(*a, **kw):
@@ -207,8 +207,8 @@ async def test_sandbox_without_token_is_rejected_before_network(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_live_mode_targets_the_hft_host(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "LIVE")
-    monkeypatch.setenv("UPSTOX_LIVE_TRADING_CONFIRMED", "YES")
+    monkeypatch.setenv("EXECUTION_MODE", "LIVE")
+    monkeypatch.setenv("LIVE_TRADING_CONFIRMED", "YES")
     monkeypatch.setattr(ua_module.upstox_auth, "load_token", lambda: "live-token")
 
     def handler(request):
@@ -228,7 +228,7 @@ async def test_live_mode_targets_the_hft_host(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_broker_rejection_is_not_reported_as_submitted(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
     monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx")
 
     def handler(request):
@@ -248,7 +248,7 @@ async def test_broker_rejection_is_not_reported_as_submitted(monkeypatch):
 async def test_transport_failure_reports_unknown_not_submitted(monkeypatch):
     """A network failure means we genuinely don't know if the broker got
     the order. It must never be reported as submitted."""
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
     monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx")
 
     def handler(request):
@@ -269,7 +269,7 @@ async def test_no_active_broker_is_rejected_before_network(monkeypatch):
     """SANDBOX/LIVE must never silently fall back to some default broker.
     With no execution adapter registered for the active broker, place_order
     must reject cleanly rather than crash or guess a broker."""
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
     monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx-token")
 
     # Override the autouse _activate_upstox_for_tests fixture's registry:
@@ -291,7 +291,7 @@ async def test_no_active_broker_is_rejected_before_network(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_200_without_order_id_is_not_submitted(monkeypatch):
-    monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
     monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx")
 
     def handler(request):

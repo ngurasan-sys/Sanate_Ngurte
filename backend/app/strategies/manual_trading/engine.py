@@ -5,7 +5,7 @@ SL/target-triggered exit — goes through the exact same DECISION_CREATED ->
 RiskEngine -> ExecutionEngine -> OrderGateway pipeline the automated
 strategies use. There is no separate/faster path to the broker here: a
 manual order still defaults to DRY_RUN, still needs both the
-UPSTOX_EXECUTION_MODE=LIVE env var and the runtime arm switch to actually
+EXECUTION_MODE=LIVE env var and the runtime arm switch to actually
 reach a broker, and still passes through every real risk-limit check
 (quantity cap, max open positions, daily loss, daily order count, market
 hours, kill switch). "Manual" describes who chose the trade, not a

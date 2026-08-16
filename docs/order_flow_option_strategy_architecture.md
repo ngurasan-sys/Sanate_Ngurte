@@ -111,7 +111,7 @@ Covered in §1 — Path A (broken for sized orders) and Path B (proven, OFAO's t
 
 ## 13. Existing LIVE/PAPER switch
 
-`backend/app/execution/order_gateway.py` — **this already satisfies spec §35 almost exactly**, with terminology worth calling out: modes are `DRY_RUN` / `SANDBOX` / `LIVE`, not literally "PAPER"/"LIVE". `DRY_RUN` (default) logs the exact payload with zero network calls — functionally "paper mode" in the strategy's eyes. `LIVE` requires **two independent confirmations** (`UPSTOX_EXECUTION_MODE=LIVE` env var *and* either `UPSTOX_LIVE_TRADING_CONFIRMED=YES` or the frontend's runtime arm switch, `execution/runtime_state.py`, which always resets to disarmed on restart). `resolve_mode()` is called fresh on every `place_order()` — the strategy code never branches on mode, exactly per spec §35's hard requirement. **No changes needed here; OFAO's TradeIntent → DECISION_CREATED path already inherits this for free.**
+`backend/app/execution/order_gateway.py` — **this already satisfies spec §35 almost exactly**, with terminology worth calling out: modes are `DRY_RUN` / `SANDBOX` / `LIVE`, not literally "PAPER"/"LIVE". `DRY_RUN` (default) logs the exact payload with zero network calls — functionally "paper mode" in the strategy's eyes. `LIVE` requires **two independent confirmations** (`EXECUTION_MODE=LIVE` env var *and* either `LIVE_TRADING_CONFIRMED=YES` or the frontend's runtime arm switch, `execution/runtime_state.py`, which always resets to disarmed on restart). `resolve_mode()` is called fresh on every `place_order()` — the strategy code never branches on mode, exactly per spec §35's hard requirement. **No changes needed here; OFAO's TradeIntent → DECISION_CREATED path already inherits this for free.**
 
 ## 14. Existing position manager
 
