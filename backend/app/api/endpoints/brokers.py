@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from backend.app.core import credential_store, dhan_auth, upstox_auth, zerodha_auth
+from backend.app.core.active_broker import BrokerSwitchError, active_broker
 from backend.app.core.broker_registry import BROKERS, get_broker, is_known_broker
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,10 @@ class SaveCredentialsRequest(BaseModel):
 class DhanTokenRequest(BaseModel):
     client_id: str
     access_token: str
+
+
+class SetActiveBrokerRequest(BaseModel):
+    broker_id: str
 
 
 def _result_page(broker_id: str, status: str, detail: str = "") -> str:
@@ -109,6 +114,20 @@ async def list_brokers():
         }
         for b in BROKERS
     ]
+
+
+@router.get("/active")
+async def get_active_broker():
+    return {"broker_id": active_broker.get_active_broker_id()}
+
+
+@router.post("/active")
+async def set_active_broker(req: SetActiveBrokerRequest):
+    try:
+        await active_broker.set_active_broker(req.broker_id)
+    except BrokerSwitchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"broker_id": req.broker_id, "active": True}
 
 
 @router.get("/{broker_id}/status")
