@@ -136,12 +136,21 @@ async def lifespan(app: FastAPI):
     # has a saved token, activate it automatically — this preserves
     # today's exact behavior (Upstox always connects on startup if a
     # token exists) under the new multi-broker model.
-    if active_broker.get_active_broker_id() is None and active_broker.is_broker_ready("upstox"):
-        await active_broker.set_active_broker("upstox")
-    elif active_broker.get_active_broker_id() and active_broker.get_active_provider():
-        # A broker was already active from a previous run (persisted) —
-        # (re)connect its feed now that the process has restarted.
-        await active_broker.get_active_provider().connect_feed()
+    #
+    # This used to be a fire-and-forget asyncio.create_task(), so a broker
+    # connect failure never took down the app. Now that it's awaited
+    # directly, wrap it in try/except so a transient Upstox (or any
+    # broker) connect failure at startup is logged but never prevents the
+    # other ~20 engines below from starting.
+    try:
+        if active_broker.get_active_broker_id() is None and active_broker.is_broker_ready("upstox"):
+            await active_broker.set_active_broker("upstox")
+        elif active_broker.get_active_broker_id() and active_broker.get_active_provider():
+            # A broker was already active from a previous run (persisted) —
+            # (re)connect its feed now that the process has restarted.
+            await active_broker.get_active_provider().connect_feed()
+    except Exception:
+        logger.exception("Failed to activate/reconnect broker feed at startup")
     # If neither branch applies (no broker ready/active), the app starts
     # with no live feed rather than silently defaulting to one.
 
