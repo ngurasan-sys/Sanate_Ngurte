@@ -275,6 +275,14 @@ class CASDislocationEngine:
     def _has_active_position(self) -> bool:
         return any(p.status in ("PENDING", "OPEN") for p in self.positions.values())
 
+    def get_open_position_blocker(self) -> Optional[str]:
+        open_positions = [p for p in self.positions.values() if p.status in ("PENDING", "OPEN")]
+        if not open_positions:
+            return None
+        return f"{len(open_positions)} open position(s): " + ", ".join(
+            f"{p.underlying} {p.strike} {p.option_type}" for p in open_positions
+        )
+
     async def _publish_inactive(self, now_ist, reason: str) -> None:
         self.latest_reading = CASReading(timestamp=now_ist, state="INACTIVE", reason=reason)
         await self._publish_reading()

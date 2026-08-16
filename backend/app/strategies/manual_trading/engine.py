@@ -123,6 +123,14 @@ class ManualTradingEngine:
                     )
             raise ManualTradingError(f"Option chain fetch failed for {underlying}: {exc}")
 
+    def get_open_position_blocker(self) -> Optional[str]:
+        open_positions = [p for p in self.positions.values() if p.status == "OPEN"]
+        if not open_positions:
+            return None
+        return f"{len(open_positions)} open position(s): " + ", ".join(
+            f"{p.underlying} {p.strike} {p.option_type}" for p in open_positions
+        )
+
     async def place_order(self, request: ManualOrderRequest) -> ManualPosition:
         if request.lots <= 0:
             raise ManualTradingError("lots must be a positive integer.")

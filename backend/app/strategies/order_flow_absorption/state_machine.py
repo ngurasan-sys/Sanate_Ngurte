@@ -112,6 +112,12 @@ class OFAOStateMachine:
         self._contexts[instrument] = SetupContext(instrument=instrument)
         return self._contexts[instrument]
 
+    def has_any_active_setup(self) -> bool:
+        return any(
+            ctx.state != SetupState.NO_SETUP and ctx.state not in TERMINAL_STATES
+            for ctx in self._contexts.values()
+        )
+
     def is_signal_stale(self, instrument: str, timeout_seconds: float, now: Optional[datetime] = None) -> bool:
         """Spec §23 — a SIGNAL_READY setup not executed within
         signal_timeout_seconds must be revalidated, not blindly executed.
