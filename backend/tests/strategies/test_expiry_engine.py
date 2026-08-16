@@ -2,6 +2,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from backend.app.core import active_broker as ab_module
+from backend.app.strategies import expiry_engine as engine_module
 from backend.app.strategies.expiry_engine import (
     ExpiryOITrackerEngine,
     build_macro_clue,
@@ -11,6 +13,32 @@ from backend.app.strategies.expiry_engine import (
     select_atm_window,
 )
 from backend.app.market_data.option_chain_client import OptionChainLookupError
+
+
+class _FakeAuth:
+    def __init__(self, token):
+        self._token = token
+
+    def load_token(self):
+        return self._token
+
+
+class _FakeProvider:
+    def __init__(self, fetch_mock):
+        self.fetch_option_chain = fetch_mock
+
+    def instrument_key_for_index(self, underlying):
+        return "NSE_INDEX|Nifty 50"
+
+
+def _activate(monkeypatch, token, fetch_mock=None):
+    registry = ab_module.ActiveBrokerRegistry()
+    registry.register_broker(
+        "upstox", provider=_FakeProvider(fetch_mock or AsyncMock()), auth_module=_FakeAuth(token),
+    )
+    registry._active_broker_id = "upstox"
+    monkeypatch.setattr(engine_module, "active_broker", registry)
+    return registry
 
 
 def _make_row(strike: float, spot: float, call_oi=100000, call_prev_oi=100000,
@@ -114,7 +142,7 @@ def test_build_macro_clue_none_when_no_itm_strikes():
 
 
 @pytest.mark.asyncio
-async def test_poll_loop_publishes_insufficient_data_without_token():
+async def test_poll_loop_publishes_insufficient_data_without_token(monkeypatch):
     engine = ExpiryOITrackerEngine()
     published = []
 
@@ -122,9 +150,8 @@ async def test_poll_loop_publishes_insufficient_data_without_token():
         published.append(payload)
         engine.running = False  # stop after first publish
 
+    _activate(monkeypatch, token=None)
     with patch(
-        "backend.app.strategies.expiry_engine.upstox_auth.load_token", return_value=None,
-    ), patch(
         "backend.app.strategies.expiry_engine.event_bus.publish", new=capture,
     ):
         engine.running = True
@@ -135,7 +162,7 @@ async def test_poll_loop_publishes_insufficient_data_without_token():
 
 
 @pytest.mark.asyncio
-async def test_poll_loop_falls_back_to_next_week_when_current_week_empty():
+async def test_poll_loop_falls_back_to_next_week_when_current_week_empty(monkeypatch):
     engine = ExpiryOITrackerEngine()
     chain = [_make_row(24500, 24510)]
     published = []
@@ -146,11 +173,8 @@ async def test_poll_loop_falls_back_to_next_week_when_current_week_empty():
 
     fetch_mock = AsyncMock(side_effect=[OptionChainLookupError("empty"), chain])
 
+    _activate(monkeypatch, token="tok", fetch_mock=fetch_mock)
     with patch(
-        "backend.app.strategies.expiry_engine.upstox_auth.load_token", return_value="tok",
-    ), patch(
-        "backend.app.strategies.expiry_engine.fetch_option_chain", new=fetch_mock,
-    ), patch(
         "backend.app.strategies.expiry_engine.event_bus.publish", new=capture,
     ):
         engine.running = True
@@ -164,7 +188,7 @@ async def test_poll_loop_falls_back_to_next_week_when_current_week_empty():
 
 
 @pytest.mark.asyncio
-async def test_poll_loop_publishes_insufficient_data_on_total_lookup_failure():
+async def test_poll_loop_publishes_insufficient_data_on_total_lookup_failure(monkeypatch):
     engine = ExpiryOITrackerEngine()
     published = []
 
@@ -174,11 +198,8 @@ async def test_poll_loop_publishes_insufficient_data_on_total_lookup_failure():
 
     fetch_mock = AsyncMock(side_effect=OptionChainLookupError("boom"))
 
+    _activate(monkeypatch, token="tok", fetch_mock=fetch_mock)
     with patch(
-        "backend.app.strategies.expiry_engine.upstox_auth.load_token", return_value="tok",
-    ), patch(
-        "backend.app.strategies.expiry_engine.fetch_option_chain", new=fetch_mock,
-    ), patch(
         "backend.app.strategies.expiry_engine.event_bus.publish", new=capture,
     ):
         engine.running = True

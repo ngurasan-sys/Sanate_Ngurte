@@ -7,13 +7,15 @@ test_signal_to_decision_chain.py / test_risk_execution_chain.py.
 """
 
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
+from backend.app.core import active_broker as ab_module
 from backend.app.engines.execution import ExecutionEngine
 from backend.app.engines.risk import RiskEngine
 from backend.app.execution.risk_limits import RiskLimits
+from backend.app.strategies.manual_trading import engine as engine_module
 from backend.app.strategies.manual_trading.engine import ManualTradingEngine
 from backend.app.strategies.manual_trading.models import ManualOrderRequest
 
@@ -31,11 +33,28 @@ def _row(strike, call_ltp=100.0):
 
 CHAIN = [_row(24500)]
 
-PATCH_TOKEN = "backend.app.strategies.manual_trading.engine.upstox_auth.load_token"
-PATCH_FETCH = "backend.app.strategies.manual_trading.engine.fetch_option_chain"
+
+class _FakeAuth:
+    def load_token(self):
+        return "fake-token"
 
 
-async def _place_order_through_full_chain(risk_limits: RiskLimits, lots: int = 1):
+class _FakeProvider:
+    def instrument_key_for_index(self, underlying):
+        return "NSE_INDEX|Nifty 50"
+
+    async def fetch_option_chain(self, index_key, token, expiry_date="current_week"):
+        return CHAIN
+
+
+def _activate(monkeypatch):
+    registry = ab_module.ActiveBrokerRegistry()
+    registry.register_broker("upstox", provider=_FakeProvider(), auth_module=_FakeAuth())
+    registry._active_broker_id = "upstox"
+    monkeypatch.setattr(engine_module, "active_broker", registry)
+
+
+async def _place_order_through_full_chain(risk_limits: RiskLimits, monkeypatch, lots: int = 1):
     """Chains ManualTradingEngine -> RiskEngine -> ExecutionEngine ->
     back into ManualTradingEngine's own RISK_DECISION/EXECUTION_UPDATE
     handlers, exactly as the real event bus would route it — proving the
@@ -57,9 +76,8 @@ async def _place_order_through_full_chain(risk_limits: RiskLimits, lots: int = 1
         elif topic == "EXECUTION_UPDATE":
             await manual_engine._on_execution_update(payload)
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch("backend.app.strategies.manual_trading.engine.event_bus.publish", new=capture), \
+    _activate(monkeypatch)
+    with patch("backend.app.strategies.manual_trading.engine.event_bus.publish", new=capture), \
          patch("backend.app.engines.risk.event_bus.publish", new=capture), \
          patch("backend.app.engines.execution.event_bus.publish", new=capture), \
          patch("backend.app.engines.risk.datetime") as mock_dt:
@@ -77,7 +95,7 @@ async def _place_order_through_full_chain(risk_limits: RiskLimits, lots: int = 1
 @pytest.mark.asyncio
 async def test_manual_order_within_limits_reaches_dry_run_execution(monkeypatch):
     monkeypatch.delenv("EXECUTION_MODE", raising=False)
-    manual_engine, position, published = await _place_order_through_full_chain(RiskLimits(), lots=1)
+    manual_engine, position, published = await _place_order_through_full_chain(RiskLimits(), monkeypatch, lots=1)
     topics = [t for t, _ in published]
 
     assert "RISK_DECISION" in topics
@@ -95,10 +113,10 @@ async def test_manual_order_within_limits_reaches_dry_run_execution(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_manual_order_exceeding_quantity_limit_is_rejected_by_risk():
+async def test_manual_order_exceeding_quantity_limit_is_rejected_by_risk(monkeypatch):
     # NIFTY lot size 65; 1 lot = 65 units. Cap it below that so risk rejects it.
     manual_engine, position, published = await _place_order_through_full_chain(
-        RiskLimits(max_quantity_per_order=50), lots=1,
+        RiskLimits(max_quantity_per_order=50), monkeypatch, lots=1,
     )
     topics = [t for t, _ in published]
 
@@ -117,7 +135,7 @@ async def test_manual_order_exceeding_quantity_limit_is_rejected_by_risk():
 
 
 @pytest.mark.asyncio
-async def test_manual_order_blocked_while_risk_engine_halted():
+async def test_manual_order_blocked_while_risk_engine_halted(monkeypatch):
     manual_engine = ManualTradingEngine()
     risk_engine = RiskEngine()
     risk_engine.halt("kill switch test")
@@ -130,9 +148,8 @@ async def test_manual_order_blocked_while_risk_engine_halted():
         elif topic == "RISK_DECISION":
             await manual_engine._on_risk_decision(payload)
 
-    with patch(PATCH_TOKEN, return_value="fake-token"), \
-         patch(PATCH_FETCH, new=AsyncMock(return_value=CHAIN)), \
-         patch("backend.app.strategies.manual_trading.engine.event_bus.publish", new=capture), \
+    _activate(monkeypatch)
+    with patch("backend.app.strategies.manual_trading.engine.event_bus.publish", new=capture), \
          patch("backend.app.engines.risk.event_bus.publish", new=capture):
         position = await manual_engine.place_order(ManualOrderRequest(
             underlying="NIFTY", option_type="CE", strike=24500.0,

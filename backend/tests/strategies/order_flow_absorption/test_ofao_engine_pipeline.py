@@ -8,15 +8,33 @@ publish, proving the whole chain actually wires together.
 """
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
+from backend.app.core import active_broker as ab_module
 from backend.app.order_flow.footprint_candle import FootprintCandle, FootprintCandleAggregator
 from backend.app.order_flow.models import FootprintNode
+from backend.app.strategies.order_flow_absorption import engine as engine_module
 from backend.app.strategies.order_flow_absorption.config import OFAOConfig
 from backend.app.strategies.order_flow_absorption.engine import OFAOEngine
 from backend.app.strategies.order_flow_absorption.models import SetupState
+
+
+class _FakeAuth:
+    def load_token(self):
+        return "fake-token"
+
+
+class _FakeProvider:
+    def __init__(self, chain):
+        self._chain = chain
+
+    def instrument_key_for_index(self, underlying):
+        return "NSE_INDEX|Nifty 50"
+
+    async def fetch_option_chain(self, index_key, token, expiry_date="current_week"):
+        return self._chain
 
 BASE = datetime(2024, 10, 1, 6, 0, tzinfo=timezone.utc)  # ~11:30 IST — safely inside the default entry window
 INSTRUMENT = "NIFTY FUT"
@@ -119,7 +137,7 @@ def test_scan_reaches_location_with_bullish_context(engine, seeded_aggregator):
 
 
 @pytest.mark.asyncio
-async def test_full_pipeline_reaches_signal_ready_and_publishes_decision_created(engine, seeded_aggregator):
+async def test_full_pipeline_reaches_signal_ready_and_publishes_decision_created(engine, seeded_aggregator, monkeypatch):
     with patch("backend.app.strategies.order_flow_absorption.engine.footprint_processor") as mock_fp:
         mock_fp.aggregator = seeded_aggregator
 
@@ -186,9 +204,12 @@ async def test_full_pipeline_reaches_signal_ready_and_publishes_decision_created
             },
         }]
 
-        with patch("backend.app.strategies.order_flow_absorption.engine.upstox_auth.load_token", return_value="fake-token"), \
-             patch("backend.app.strategies.order_flow_absorption.engine.fetch_option_chain", new=AsyncMock(return_value=fake_chain)), \
-             patch("backend.app.strategies.order_flow_absorption.engine.event_bus.publish", side_effect=_fake_publish):
+        registry = ab_module.ActiveBrokerRegistry()
+        registry.register_broker("upstox", provider=_FakeProvider(fake_chain), auth_module=_FakeAuth())
+        registry._active_broker_id = "upstox"
+        monkeypatch.setattr(engine_module, "active_broker", registry)
+
+        with patch("backend.app.strategies.order_flow_absorption.engine.event_bus.publish", side_effect=_fake_publish):
             await engine._execute_signal(INSTRUMENT, "NIFTY", ctx, all_candles + [dominance_candle], dominance_time)
 
         ctx = engine.state_machine.get(INSTRUMENT)
