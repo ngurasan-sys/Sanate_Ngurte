@@ -76,10 +76,22 @@ class ActiveBrokerRegistry:
 
     def is_broker_ready(self, broker_id: str) -> bool:
         """True once a provider AND execution adapter are registered for
-        broker_id AND its stored credentials produce a real token."""
+        broker_id AND its credentials produce a token it can actually
+        trade with.
+
+        Auth modules may expose has_any_usable_token() when a saved OAuth
+        token is not the only way to get a usable token — Upstox's SANDBOX
+        mode uses a separate env-var token obtainable without the OAuth
+        login, and gating on load_token() alone would make SANDBOX-only
+        setups permanently un-activatable. Auth modules without that
+        method (Dhan, Zerodha today) keep the plain load_token() check.
+        """
         reg = self._registrations.get(broker_id)
         if reg is None or reg.provider is None or reg.execution_adapter is None or reg.auth_module is None:
             return False
+        has_any_usable_token = getattr(reg.auth_module, "has_any_usable_token", None)
+        if callable(has_any_usable_token):
+            return bool(has_any_usable_token())
         return reg.auth_module.load_token() is not None
 
     # ---------------------- active broker ----------------------
@@ -115,16 +127,21 @@ class ActiveBrokerRegistry:
                 f"{broker_id} is not connected, or has no data/execution integration registered yet."
             )
 
-        switching_broker = broker_id != self._active_broker_id
-        if switching_broker:
-            blockers = self.blocking_open_positions()
-            if blockers:
-                raise BrokerSwitchError(
-                    "Cannot switch active broker while positions are open: " + "; ".join(blockers)
-                )
+        if broker_id == self._active_broker_id:
+            # Already active — nothing to change. Reconnecting the feed
+            # here would tear down and rebuild a healthy live streamer for
+            # no reason, so treat a re-selection as a successful no-op.
+            logger.debug("Active broker already %s — no-op", broker_id)
+            return
+
+        blockers = self.blocking_open_positions()
+        if blockers:
+            raise BrokerSwitchError(
+                "Cannot switch active broker while positions are open: " + "; ".join(blockers)
+            )
 
         previous_provider = self.get_active_provider()
-        if switching_broker and previous_provider is not None:
+        if previous_provider is not None:
             await previous_provider.disconnect_feed()
 
         self._active_broker_id = broker_id
@@ -136,6 +153,30 @@ class ActiveBrokerRegistry:
 
         await event_bus.publish("broker_active_changed", {"broker_id": broker_id})
         logger.info("Active broker set to %s", broker_id)
+
+    async def clear_active_broker(self) -> None:
+        """Drop the active-broker selection entirely (no fallback to a
+        default). Called when the active broker's credentials are deleted:
+        continuing to report it as active would hand out a provider and
+        execution adapter backed by an auth module with no token.
+        """
+        if self._active_broker_id is None:
+            return
+
+        previous_id = self._active_broker_id
+        previous_provider = self.get_active_provider()
+
+        self._active_broker_id = None
+        self._persist()
+
+        if previous_provider is not None:
+            try:
+                await previous_provider.disconnect_feed()
+            except Exception:
+                logger.exception("Failed to disconnect feed for %s while clearing active broker", previous_id)
+
+        await event_bus.publish("broker_active_changed", {"broker_id": None})
+        logger.info("Active broker cleared (was %s)", previous_id)
 
     # ---------------------- persistence ----------------------
 

@@ -8,7 +8,7 @@ stop, regardless of what the absorption/dominance modules report.
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from .models import SetupContext, SetupDirection, SetupState, TERMINAL_STATES, TradeIntent, generate_setup_id
 
@@ -112,11 +112,19 @@ class OFAOStateMachine:
         self._contexts[instrument] = SetupContext(instrument=instrument)
         return self._contexts[instrument]
 
+    def active_setups(self) -> List[str]:
+        """Instrument keys with a setup currently in flight (past NO_SETUP,
+        not yet terminal). The single public source for "what is active" —
+        callers must not walk _contexts themselves.
+        """
+        return [
+            instrument
+            for instrument, ctx in self._contexts.items()
+            if ctx.state != SetupState.NO_SETUP and ctx.state not in TERMINAL_STATES
+        ]
+
     def has_any_active_setup(self) -> bool:
-        return any(
-            ctx.state != SetupState.NO_SETUP and ctx.state not in TERMINAL_STATES
-            for ctx in self._contexts.values()
-        )
+        return bool(self.active_setups())
 
     def is_signal_stale(self, instrument: str, timeout_seconds: float, now: Optional[datetime] = None) -> bool:
         """Spec §23 — a SIGNAL_READY setup not executed within

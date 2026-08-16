@@ -149,6 +149,9 @@ export const BrokerConnectionsView: React.FC = () => {
       setFormValues({});
       setNotice(`${active.display_name} disconnected.`);
       fetchBrokers();
+      // The backend clears the active broker when the active one is
+      // disconnected — re-read it so the ACTIVE badge clears immediately.
+      fetchActiveBroker();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to disconnect');
     } finally {

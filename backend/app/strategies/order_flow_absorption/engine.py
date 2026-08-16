@@ -42,7 +42,7 @@ from .dominance import DominanceResult, evaluate_bearish_dominance, evaluate_bul
 from .fibonacci import compute_retracement_levels
 from .location import LocationResult, evaluate_location
 from .market_structure import StructureBar, StructureBias, SwingType, classify_structure, find_swing_points, resample_bars
-from .models import SetupContext, SetupDirection, SetupState, TERMINAL_STATES, TradeIntent
+from .models import SetupContext, SetupDirection, SetupState, TradeIntent
 from .option_selection import extract_candidates_from_chain, select_best_option
 from .risk_reward import compute_risk_reward_plan, compute_stop
 from .state_machine import InvalidTransitionError, OFAOStateMachine
@@ -112,10 +112,7 @@ class OFAOEngine:
         return self._latest_snapshot.get(instrument_key)
 
     def get_open_position_blocker(self) -> Optional[str]:
-        active = [
-            instrument for instrument, ctx in self.state_machine._contexts.items()
-            if ctx.state != SetupState.NO_SETUP and ctx.state not in TERMINAL_STATES
-        ]
+        active = self.state_machine.active_setups()
         if not active:
             return None
         return f"{len(active)} active setup(s): {', '.join(active)}."

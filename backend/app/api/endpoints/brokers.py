@@ -171,6 +171,11 @@ async def save_credentials(broker_id: str, req: SaveCredentialsRequest):
 async def delete_credentials(broker_id: str):
     _require_known_broker(broker_id)
     credential_store.delete_credentials(broker_id)
+    # Disconnecting the broker that is currently driving data/execution
+    # must also stand it down — otherwise /active keeps reporting it and
+    # callers keep getting a provider/adapter backed by dead credentials.
+    if active_broker.get_active_broker_id() == broker_id:
+        await active_broker.clear_active_broker()
     return {"broker_id": broker_id, "saved": False, "connected": False}
 
 

@@ -55,3 +55,18 @@ def test_ofao_blocker_reports_active_setup():
     blocker = engine.get_open_position_blocker()
     assert blocker is not None
     assert "NIFTY FUT" in blocker
+
+
+def test_ofao_blocker_goes_through_the_state_machines_public_predicate():
+    """get_open_position_blocker() must read active_setups() rather than
+    re-implementing the predicate over state_machine._contexts."""
+    engine = OFAOEngine()
+    engine.state_machine.transition(
+        "NIFTY FUT", SetupState.LOCATION_REACHED, direction=SetupDirection.BULL, location_price=100.0,
+    )
+    assert engine.state_machine.active_setups() == ["NIFTY FUT"]
+
+    # Once terminal, the setup is no longer a blocker.
+    engine.state_machine.transition("NIFTY FUT", SetupState.INVALIDATED)
+    assert engine.state_machine.active_setups() == []
+    assert engine.get_open_position_blocker() is None

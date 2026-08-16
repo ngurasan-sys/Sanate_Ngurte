@@ -290,6 +290,48 @@ async def test_no_active_broker_is_rejected_before_network(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_sandbox_only_setup_activates_upstox_and_places_the_order(monkeypatch, tmp_path):
+    """Regression: a developer with EXECUTION_MODE=SANDBOX and only
+    UPSTOX_SANDBOX_ACCESS_TOKEN set (no live OAuth token) could place
+    sandbox orders before the multi-broker phase. Readiness must not be
+    gated on the live token alone, or Upstox never auto-activates and
+    every order comes back REJECTED with "No active broker"."""
+    from backend.app.core import upstox_auth
+
+    monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
+    monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx-token")
+    # No live OAuth token exists anywhere.
+    monkeypatch.setattr(upstox_auth, "TOKEN_PATH", tmp_path / "no_such_token.json")
+
+    registry = ab_module.ActiveBrokerRegistry()
+    registry.register_broker(
+        "upstox", provider=_StubProvider(), execution_adapter=upstox_execution_adapter,
+        auth_module=upstox_auth,
+    )
+    monkeypatch.setattr(ab_module, "active_broker", registry)
+    monkeypatch.setattr(gw_module, "active_broker", registry)
+
+    # Mirror main.py's startup auto-activation.
+    assert registry.is_broker_ready("upstox") is True
+    if registry.get_active_broker_id() is None and registry.is_broker_ready("upstox"):
+        await registry.set_active_broker("upstox")
+    assert registry.get_active_broker_id() == "upstox"
+
+    def handler(request):
+        assert "api-sandbox.upstox.com" in str(request.url)
+        assert request.headers["Authorization"] == "Bearer sbx-token"
+        return httpx.Response(200, json={"status": "success", "data": {"order_id": "SBX9"}})
+
+    monkeypatch.setattr(
+        ua_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
+    )
+
+    result = await OrderGateway().place_order(_req())
+    assert result.status == "SUBMITTED"
+    assert result.order_id == "SBX9"
+
+
+@pytest.mark.asyncio
 async def test_200_without_order_id_is_not_submitted(monkeypatch):
     monkeypatch.setenv("EXECUTION_MODE", "SANDBOX")
     monkeypatch.setenv("UPSTOX_SANDBOX_ACCESS_TOKEN", "sbx")

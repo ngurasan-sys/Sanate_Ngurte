@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api.endpoints.brokers import router as brokers_router
+from backend.app.core import active_broker as ab_module
 from backend.app.core import credential_store, upstox_auth
 
 app = FastAPI()
@@ -21,6 +22,10 @@ def _isolate_store(tmp_path, monkeypatch):
     # Upstox OAuth testing — isolate it so "connected" reflects only what
     # this test itself set up, not leftover state from earlier sessions.
     monkeypatch.setattr(upstox_auth, "TOKEN_PATH", tmp_path / ".token.json")
+    # active_broker is a process-wide singleton — never let a test write
+    # to the real backend/.active_broker.json or leak an active broker.
+    monkeypatch.setattr(ab_module, "STATE_PATH", tmp_path / ".active_broker.json")
+    monkeypatch.setattr(ab_module.active_broker, "_active_broker_id", None)
 
 
 def test_list_brokers_returns_all_three_disconnected_by_default():
@@ -88,6 +93,29 @@ def test_delete_credentials_clears_stored_values():
 
     assert response.status_code == 200
     assert credential_store.load_credentials("upstox") is None
+
+
+def test_disconnecting_the_active_broker_clears_it(monkeypatch):
+    """Deleting the active broker's credentials must stand it down —
+    leaving it "active" would keep handing callers a provider/adapter
+    backed by an auth module with no token."""
+    monkeypatch.setattr(ab_module.active_broker, "_active_broker_id", "upstox")
+    credential_store.save_credentials("upstox", {"api_key": "k"})
+
+    response = client.delete("/api/v1/brokers/upstox/credentials")
+
+    assert response.status_code == 200
+    assert ab_module.active_broker.get_active_broker_id() is None
+
+
+def test_disconnecting_a_different_broker_leaves_the_active_one_alone(monkeypatch):
+    monkeypatch.setattr(ab_module.active_broker, "_active_broker_id", "upstox")
+    credential_store.save_credentials("dhan", {"access_token": "t"})
+
+    response = client.delete("/api/v1/brokers/dhan/credentials")
+
+    assert response.status_code == 200
+    assert ab_module.active_broker.get_active_broker_id() == "upstox"
 
 
 def test_login_without_saved_credentials_returns_400(monkeypatch):

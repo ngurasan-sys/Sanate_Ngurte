@@ -60,6 +60,22 @@ def load_token() -> Optional[str]:
     return data.get("access_token")
 
 
+def has_any_usable_token() -> bool:
+    """True when Upstox can actually place *some* order — either the live
+    OAuth token is saved, or a sandbox-only token is configured via
+    UPSTOX_SANDBOX_ACCESS_TOKEN.
+
+    Readiness must not be gated purely on load_token(): SANDBOX mode uses
+    a separate token (see execution/upstox_adapter._resolve_token) that is
+    obtainable without ever running the OAuth login. Gating on load_token()
+    alone would leave a fully-configured EXECUTION_MODE=SANDBOX developer
+    setup with no active broker, silently REJECTing every order.
+    """
+    if load_token() is not None:
+        return True
+    return bool(os.environ.get("UPSTOX_SANDBOX_ACCESS_TOKEN"))
+
+
 AUTHORIZE_URL = "https://api.upstox.com/v2/login/authorization/dialog"
 TOKEN_URL = "https://api.upstox.com/v2/login/authorization/token"
 
