@@ -35,15 +35,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Optional
 
-import httpx
-
-from backend.app.core import upstox_auth
+from backend.app.core.active_broker import active_broker
 from backend.app.execution.runtime_state import execution_runtime_state
 
 logger = logging.getLogger(__name__)
-
-LIVE_ORDER_URL = "https://api-hft.upstox.com/v2/order/place"
-SANDBOX_ORDER_URL = "https://api-sandbox.upstox.com/v2/order/place"
 
 
 class ExecutionMode(str, Enum):
@@ -132,14 +127,6 @@ def resolve_mode() -> ExecutionMode:
     return mode
 
 
-def _resolve_token(mode: ExecutionMode) -> Optional[str]:
-    """Sandbox uses its own token (Upstox issues a separate sandbox-only
-    token that cannot place live orders, and vice versa)."""
-    if mode is ExecutionMode.SANDBOX:
-        return os.environ.get("UPSTOX_SANDBOX_ACCESS_TOKEN")
-    return upstox_auth.load_token()
-
-
 class OrderGateway:
     def __init__(self):
         self.last_result: Optional[OrderResult] = None
@@ -159,67 +146,15 @@ class OrderGateway:
             self.last_result = result
             return result
 
-        token = _resolve_token(mode)
-        if not token:
-            detail = (
-                "No sandbox access token (set UPSTOX_SANDBOX_ACCESS_TOKEN)."
-                if mode is ExecutionMode.SANDBOX
-                else "No saved Upstox token — log in via /api/v1/broker/upstox/login."
-            )
+        adapter = active_broker.get_active_execution_adapter()
+        if adapter is None:
+            detail = "No active broker — connect and activate a broker before placing real orders."
             logger.error("Order rejected before submission: %s", detail)
             result = OrderResult(status="REJECTED", mode=mode, payload=payload, detail=detail)
             self.last_result = result
             return result
 
-        url = SANDBOX_ORDER_URL if mode is ExecutionMode.SANDBOX else LIVE_ORDER_URL
-
-        if mode is ExecutionMode.LIVE:
-            logger.warning(
-                "PLACING A REAL LIVE ORDER (real money): %s %s x%s",
-                request.transaction_type, request.instrument_token, request.quantity,
-            )
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    url,
-                    json=payload,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                        "accept": "application/json",
-                    },
-                )
-        except httpx.HTTPError as exc:
-            # A transport failure means we do NOT know whether the broker
-            # received the order. Never report this as submitted.
-            detail = f"Order request failed in transport: {exc}. Order status UNKNOWN — verify manually."
-            logger.error(detail)
-            result = OrderResult(status="ERROR", mode=mode, payload=payload, detail=detail)
-            self.last_result = result
-            return result
-
-        if response.status_code != 200:
-            detail = f"Broker rejected order ({response.status_code}): {response.text}"
-            logger.error(detail)
-            result = OrderResult(status="REJECTED", mode=mode, payload=payload, detail=detail)
-            self.last_result = result
-            return result
-
-        body = response.json()
-        order_id = (body.get("data") or {}).get("order_id")
-        if not order_id:
-            detail = f"Broker returned 200 but no order_id: {body}. Order status UNKNOWN — verify manually."
-            logger.error(detail)
-            result = OrderResult(status="ERROR", mode=mode, payload=payload, detail=detail)
-            self.last_result = result
-            return result
-
-        logger.info("Order accepted by broker (%s mode). order_id=%s", mode.value, order_id)
-        result = OrderResult(
-            status="SUBMITTED", mode=mode, order_id=order_id, payload=payload,
-            detail="Broker returned an order_id.",
-        )
+        result = await adapter.place_order(request, mode)
         self.last_result = result
         return result
 

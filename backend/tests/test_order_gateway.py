@@ -9,6 +9,7 @@ from backend.app.execution.order_gateway import (
     resolve_mode,
 )
 from backend.app.execution.runtime_state import execution_runtime_state
+from backend.app.execution import upstox_adapter as ua_module
 
 _RealAsyncClient = httpx.AsyncClient
 
@@ -21,6 +22,44 @@ def _reset_runtime_arm_state():
     execution_runtime_state.disarm()
     yield
     execution_runtime_state.disarm()
+
+
+from backend.app.core import active_broker as ab_module
+from backend.app.execution.upstox_adapter import upstox_execution_adapter
+
+
+class _AlwaysTokenAuth:
+    def load_token(self):
+        return "test-token"  # SANDBOX/LIVE tests set their own real token expectation via monkeypatch
+
+
+class _StubProvider:
+    async def connect_feed(self):
+        pass
+
+    async def disconnect_feed(self):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _activate_upstox_for_tests(monkeypatch, tmp_path):
+    """order_gateway.place_order only needs an active execution adapter,
+    not a running feed — set the registry's state directly rather than
+    going through the full async set_active_broker() (which would also
+    try to connect a feed and publish an event, neither of which matters
+    here, and calling an async method from a sync autouse fixture would
+    fight pytest-asyncio's own event loop management).
+    """
+    monkeypatch.setattr(ab_module, "STATE_PATH", tmp_path / "active_broker.json")
+    registry = ab_module.ActiveBrokerRegistry()
+    registry.register_broker(
+        "upstox", provider=_StubProvider(), execution_adapter=upstox_execution_adapter,
+        auth_module=_AlwaysTokenAuth(),
+    )
+    registry._active_broker_id = "upstox"
+    monkeypatch.setattr(ab_module, "active_broker", registry)
+    monkeypatch.setattr(gw_module, "active_broker", registry)
+    yield
 
 
 def _mock_client_factory(transport):
@@ -119,7 +158,7 @@ async def test_dry_run_makes_no_network_call(monkeypatch):
     def explode(*a, **kw):
         raise AssertionError("DRY_RUN must never open a network client")
 
-    monkeypatch.setattr(gw_module.httpx, "AsyncClient", explode)
+    monkeypatch.setattr(ua_module.httpx, "AsyncClient", explode)
 
     result = await OrderGateway().place_order(_req())
 
@@ -142,7 +181,7 @@ async def test_sandbox_submission_returns_order_id(monkeypatch):
         return httpx.Response(200, json={"status": "success", "data": {"order_id": "ORD123"}})
 
     monkeypatch.setattr(
-        gw_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
+        ua_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
     )
 
     result = await OrderGateway().place_order(_req())
@@ -159,7 +198,7 @@ async def test_sandbox_without_token_is_rejected_before_network(monkeypatch):
     def explode(*a, **kw):
         raise AssertionError("must not call the network without a token")
 
-    monkeypatch.setattr(gw_module.httpx, "AsyncClient", explode)
+    monkeypatch.setattr(ua_module.httpx, "AsyncClient", explode)
 
     result = await OrderGateway().place_order(_req())
     assert result.status == "REJECTED"
@@ -170,14 +209,14 @@ async def test_sandbox_without_token_is_rejected_before_network(monkeypatch):
 async def test_live_mode_targets_the_hft_host(monkeypatch):
     monkeypatch.setenv("UPSTOX_EXECUTION_MODE", "LIVE")
     monkeypatch.setenv("UPSTOX_LIVE_TRADING_CONFIRMED", "YES")
-    monkeypatch.setattr(gw_module.upstox_auth, "load_token", lambda: "live-token")
+    monkeypatch.setattr(ua_module.upstox_auth, "load_token", lambda: "live-token")
 
     def handler(request):
         assert "api-hft.upstox.com" in str(request.url)
         return httpx.Response(200, json={"status": "success", "data": {"order_id": "LIVE1"}})
 
     monkeypatch.setattr(
-        gw_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
+        ua_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
     )
 
     result = await OrderGateway().place_order(_req())
@@ -196,7 +235,7 @@ async def test_broker_rejection_is_not_reported_as_submitted(monkeypatch):
         return httpx.Response(400, json={"status": "error", "errors": [{"message": "bad qty"}]})
 
     monkeypatch.setattr(
-        gw_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
+        ua_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
     )
 
     result = await OrderGateway().place_order(_req())
@@ -216,7 +255,7 @@ async def test_transport_failure_reports_unknown_not_submitted(monkeypatch):
         raise httpx.ConnectError("connection reset")
 
     monkeypatch.setattr(
-        gw_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
+        ua_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
     )
 
     result = await OrderGateway().place_order(_req())
@@ -234,7 +273,7 @@ async def test_200_without_order_id_is_not_submitted(monkeypatch):
         return httpx.Response(200, json={"status": "success", "data": {}})
 
     monkeypatch.setattr(
-        gw_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
+        ua_module.httpx, "AsyncClient", _mock_client_factory(httpx.MockTransport(handler))
     )
 
     result = await OrderGateway().place_order(_req())
