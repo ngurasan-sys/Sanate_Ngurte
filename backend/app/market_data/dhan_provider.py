@@ -5,6 +5,7 @@ implemented in a follow-up task — calling them here raises, rather than
 silently doing nothing.
 """
 
+import logging
 from datetime import date
 from typing import Any, Dict, List
 
@@ -12,6 +13,8 @@ import httpx
 
 from backend.app.core.dhan_instrument_master import dhan_instrument_master
 from backend.app.market_data.market_quote import Quote
+
+logger = logging.getLogger(__name__)
 
 DHAN_BASE_URL = "https://api.dhan.co/v2"
 
@@ -50,26 +53,38 @@ class DhanProvider:
         if response.status_code != 200:
             raise DhanProviderError(f"Dhan option chain fetch failed ({response.status_code}): {response.text}")
 
-        oc = response.json().get("data", {}).get("oc", {})
+        data = response.json().get("data", {})
+        spot = data.get("last_price")
+        oc = data.get("oc", {})
         rows = []
         for strike_str, legs in oc.items():
             strike = float(strike_str)
-            row: Dict[str, Any] = {"strike_price": strike}
+            row: Dict[str, Any] = {
+                "strike_price": strike,
+                "expiry": expiry_date,
+                "underlying_spot_price": spot,
+            }
             for leg_key, canonical_key in (("ce", "call_options"), ("pe", "put_options")):
                 leg = legs.get(leg_key)
                 if not leg:
                     continue
                 option_type = "CE" if leg_key == "ce" else "PE"
                 try:
+                    underlying_name = _underlying_for_index_key(index_key)
                     security_id = dhan_instrument_master.security_id_for_option(
                         # index_key is Dhan's underlying security_id, not the underlying
                         # name — callers pass the underlying name separately via the
                         # instrument master's own state; this call resolves by strike
                         # under the assumption the master was loaded for this underlying.
-                        _underlying_for_index_key(index_key), expiry_date, strike, option_type,
+                        underlying_name, expiry_date, strike, option_type,
                     )
                 except Exception:
                     security_id = None
+                    logger.warning(
+                        "Dhan security_id resolution failed for underlying_index_key=%s "
+                        "expiry=%s strike=%s option_type=%s; instrument_key will be None.",
+                        index_key, expiry_date, strike, option_type,
+                    )
                 greeks = leg.get("greeks", {})
                 row[canonical_key] = {
                     "instrument_key": security_id,
@@ -108,6 +123,10 @@ class DhanProvider:
         data = response.json().get("data", {})
         segment_data = next(iter(data.values()), {})
         row = segment_data.get(str(instrument_key)) or next(iter(segment_data.values()), {})
+        if not row:
+            raise DhanProviderError(
+                f"Dhan quote response contained no data for instrument_key={instrument_key!r}."
+            )
         depth = row.get("depth", {})
         buy = depth.get("buy") or []
         sell = depth.get("sell") or []
