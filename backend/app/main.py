@@ -35,6 +35,7 @@ from backend.app.api.endpoints.risk_summary import router as risk_summary_router
 from backend.app.api.endpoints.decisions_api import router as decisions_router, set_decision_engine as decisions_set_decision
 from backend.app.api.endpoints.option_chain import router as option_chain_router, set_option_analytics_engine as option_set_analytics
 from backend.app.api.endpoints.strategies import register_strategy
+from backend.app.api.endpoints.strategy_control import router as strategy_control_router
 
 from backend.app.engines.opportunity import opportunity_engine
 from backend.app.engines.decision import decision_engine
@@ -168,7 +169,10 @@ async def lifespan(app: FastAPI):
     register_strategy("oh_ol", "Open=High / Open=Low", "Opening-range breakout strategy.", engine=oh_ol_strategy)
     register_strategy("straddle", "Straddle Monitor", "ATM straddle monitoring and signal generation.", engine=straddle_engine)
     register_strategy("pullback_chop_filter", "Pullback Chop Filter", "Filters chop/consolidation zones from pullback entries.", engine=pullback_chop_filter_engine)
-    register_strategy("gap_opening", "Gap Opening Strategies", "Gap-open discovery and OI-regime driven entries.", engine=gap_opening_engine)
+    # id must match the literal "gap_opening_strategies" gap_opening_engine
+    # hardcodes into every StrategySignal.strategy_id (engine.py:_emit_signal)
+    # — RiskEngine's per-strategy gate keys off this exact string.
+    register_strategy("gap_opening_strategies", "Gap Opening Strategies", "Gap-open discovery and OI-regime driven entries.", engine=gap_opening_engine)
     register_strategy("expiry_reversal", "Expiry Day Reversal", "Expiry-day mean-reversion strategy.", engine=expiry_reversal_engine)
     register_strategy("cas_dislocation", "CAS Dislocation", "Cash-and-carry / synthetic dislocation strategy.", engine=cas_dislocation_engine)
     register_strategy("ofao", "Order Flow Absorption (OFAO)", "Footprint-based absorption/dominance option strategy.", engine=ofao_engine)
@@ -456,6 +460,10 @@ app.include_router(
 
 app.include_router(
     option_chain_router
+)
+
+app.include_router(
+    strategy_control_router
 )
 
 

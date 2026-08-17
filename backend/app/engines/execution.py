@@ -74,7 +74,7 @@ class ExecutionEngine:
             tag=f"dec_{decision_id}" if decision_id else None,
         )
 
-        result = await order_gateway.place_order(request)
+        result = await order_gateway.place_order(request, force_dry_run=bool(req_data.get("force_dry_run")))
 
         await self._publish_update(
             instrument,

@@ -4,16 +4,18 @@ import { useAlgoStore } from '../stores/algoStore';
 import type { ExecutionMode, TradingMode } from '../stores/algoStore';
 import { useSystemStore } from '../stores/systemStore';
 import { useLiveExecutionStatus } from '../hooks/useLiveExecutionStatus';
+import { useLiveStrategies } from '../hooks/useLiveStrategies';
 import StatusBadge from '../components/StatusBadge';
 import ManualTradingPanel from '../components/ManualTradingPanel';
 import AlgoTradingConfigPanel from '../components/AlgoTradingConfigPanel';
-import { Play, Square, Pause, Activity, Zap, Shield, BarChart, Server, Layers, Cpu, Compass, HardDrive, User, Bot } from 'lucide-react';
+import StrategyControlPanel from '../components/StrategyControlPanel';
+import { Play, Square, Pause, Activity, Zap, Shield, Server, Layers, Cpu, Compass, HardDrive, User, Bot } from 'lucide-react';
 
 const ARM_CONFIRMATION_PHRASE = 'ARM LIVE TRADING';
 
 export const AlgoDashboardView: React.FC = () => {
   const {
-    algoEngineStatus, executionMode, tradingMode, strategies, signals, pipelineMetrics, riskMetrics,
+    algoEngineStatus, executionMode, tradingMode, signals, pipelineMetrics, riskMetrics,
     setAlgoEngineStatus, setExecutionMode, setTradingMode
   } = useAlgoStore();
 
@@ -23,6 +25,11 @@ export const AlgoDashboardView: React.FC = () => {
   // (order_gateway.resolve_mode()) — see hook for why this isn't a
   // second execution-mode system.
   useLiveExecutionStatus();
+
+  // Feeds the Strategy Control table below from the real strategy
+  // registry (GET /api/v1/strategies), not the dead algoStore.strategies
+  // field this page used to read (nothing ever populated it).
+  useLiveStrategies();
 
   const handleEngineControl = async (status: 'RUNNING' | 'PAUSED' | 'STOPPED') => {
     try {
@@ -383,46 +390,9 @@ export const AlgoDashboardView: React.FC = () => {
         <OpenHighTable />
       </div>
 
-      {/* SECTION 2 — STRATEGY MONITOR */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart size={18} className="text-emerald-400" />
-          <h3 className="text-zinc-100 font-sans font-bold text-sm tracking-wider uppercase">Strategy Monitor</h3>
-        </div>
-
-        {strategies.length === 0 ? (
-          <div className="text-center py-8 text-zinc-500 font-mono text-xs uppercase tracking-wider">
-            NO LIVE SIGNAL
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs font-mono text-left whitespace-nowrap">
-              <thead className="text-zinc-500 border-b border-zinc-800">
-                <tr>
-                  <th className="pb-2 font-normal uppercase">Strategy</th>
-                  <th className="pb-2 font-normal uppercase">Instrument</th>
-                  <th className="pb-2 font-normal uppercase">Timeframe</th>
-                  <th className="pb-2 font-normal uppercase">Status</th>
-                  <th className="pb-2 font-normal uppercase">Risk Profile</th>
-                  <th className="pb-2 font-normal uppercase text-right">Trades</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-850 text-zinc-300">
-                {strategies.map((s) => (
-                  <tr key={s.strategy_id} className="hover:bg-zinc-800/30">
-                    <td className="py-2">{s.name}</td>
-                    <td className="py-2">{s.instrument_types.join(', ')}</td>
-                    <td className="py-2">{s.timeframes.join(', ')}</td>
-                    <td className="py-2"><StatusBadge status={s.status} /></td>
-                    <td className="py-2">{s.risk_profile}</td>
-                    <td className="py-2 text-right">{s.trades || 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* SECTION 2 — STRATEGY CONTROL (single-page start/stop, ALGO/PAPER,
+          AUTO/MANUAL, live signal/position/P&L/health per strategy) */}
+      <StrategyControlPanel />
 
       {/* SECTION 3 — ACTIVE SIGNALS */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">

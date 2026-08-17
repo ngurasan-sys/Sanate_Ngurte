@@ -131,8 +131,8 @@ class OrderGateway:
     def __init__(self):
         self.last_result: Optional[OrderResult] = None
 
-    async def place_order(self, request: OrderRequest) -> OrderResult:
-        mode = resolve_mode()
+    async def place_order(self, request: OrderRequest, *, force_dry_run: bool = False) -> OrderResult:
+        mode = ExecutionMode.DRY_RUN if force_dry_run else resolve_mode()
         payload = request.to_payload()
 
         if mode is ExecutionMode.DRY_RUN:

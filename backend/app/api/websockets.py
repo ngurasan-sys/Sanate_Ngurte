@@ -64,6 +64,10 @@ class ConnectionManager:
         event_bus.subscribe("DECISION_CREATED", lambda e: self.broadcast("algo", e))
         event_bus.subscribe("RISK_DECISION", lambda e: self.broadcast("algo", e))
         event_bus.subscribe("EXECUTION_UPDATE", lambda e: self.broadcast("algo", e))
+        # strategy_runtime.py's canonical per-strategy start/stop/
+        # execution_mode/trading_mode changes — reuses the existing "algo"
+        # channel rather than adding a new one.
+        event_bus.subscribe("STRATEGY_CONFIG_CHANGED", lambda e: self.broadcast("algo", e))
         event_bus.subscribe("trending_oi", lambda e: self.broadcast("trending_oi", e))
         event_bus.subscribe("straddle", lambda e: self.broadcast("straddle", e))
         event_bus.subscribe("pullback_chop_filter_state", lambda e: self.broadcast("pullback_chop", e))

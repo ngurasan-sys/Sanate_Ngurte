@@ -15,6 +15,10 @@ class Opportunity(BaseModel):
     confidence: float
     evidence: str
     source_signals: List[str]
+    # Threaded through from STRATEGY_SIGNAL so RiskEngine can gate new
+    # entries per-strategy (strategy_runtime.is_strategy_permitted) even
+    # for strategies that share the generic Decision.source="ALGO" tag.
+    strategy_id: Optional[str] = None
 
 
 # Strategies that emit a CE/PE-style `action` instead of a `direction` field
@@ -85,6 +89,7 @@ class OpportunityEngine:
             confidence=confidence,
             evidence=f"Derived from strategy {strategy_id}",
             source_signals=[signal_id],
+            strategy_id=strategy_id,
         )
         # Prevent indefinite memory leak
         if len(self.opportunities) >= 1000:

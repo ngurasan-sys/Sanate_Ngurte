@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from backend.app.core.event_bus import event_bus
 from backend.app.engines.algo_config import algo_config_state
+from backend.app.engines.strategy_runtime import strategy_runtime
 from backend.app.execution.order_gateway import ExecutionMode, resolve_mode
 from backend.app.execution.risk_limits import (
     RiskLimits,
@@ -142,6 +143,40 @@ class RiskEngine:
                     "No real Level-2 futures feed is wired in yet."
                 ]
 
+        # Generic per-strategy gate — covers every strategy that has a
+        # canonical runtime state (strategy_runtime), including the 7 that
+        # previously had NO gate at all (gap_opening, straddle,
+        # pullback_chop_filter, trending_oi_price_action,
+        # intraday_trend_scalper, expiry_reversal, oh_ol). Additive to the
+        # source-specific checks above, not a replacement — CAS/OFAO/ALGO
+        # keep their existing dedicated checks too.
+        strategy_id = dec_data.get("strategy_id")
+        force_dry_run = False
+        if approved and strategy_id:
+            strategy_reason = strategy_runtime.is_strategy_permitted(strategy_id)
+            if strategy_reason:
+                approved = False
+                reasons = reasons + [strategy_reason]
+            else:
+                runtime_state = strategy_runtime.get(strategy_id)
+                if runtime_state.trading_mode == "MANUAL":
+                    # MANUAL means the strategy may produce signals for
+                    # display, but must never auto-submit an order — reject
+                    # here rather than letting it reach EXECUTION_REQUEST.
+                    # The decision/signal itself is still published above
+                    # via self._publish, so it remains visible in the UI.
+                    approved = False
+                    reasons = reasons + [
+                        f"{strategy_id} is in MANUAL trading mode — signal generated, "
+                        "but automatic order submission is disabled."
+                    ]
+                elif runtime_state.execution_mode == "PAPER":
+                    # PAPER must never reach a real broker regardless of the
+                    # global LIVE arm switch — force DRY_RUN at the
+                    # execution boundary rather than relying solely on
+                    # nobody having armed LIVE globally.
+                    force_dry_run = True
+
         reason_text = "Passed all risk checks." if approved else " ".join(reasons)
 
         await self._publish(decision_id, dec_data, approved, reason_text)
@@ -158,6 +193,8 @@ class RiskEngine:
                 "decision_id": decision_id,
                 "timestamp": dec_data.get("timestamp"),
                 "source": source,
+                "strategy_id": strategy_id,
+                "force_dry_run": force_dry_run,
             })
         else:
             logger.info("Risk REJECTED decision %s: %s", decision_id, reason_text)
