@@ -6,6 +6,8 @@ from .support_resistance import SupportResistanceDetector
 from .confluence import ConfluenceDetector
 
 class LevelEngine:
+    MAX_ACTIVE_LEVELS = 50
+
     def __init__(self):
         self.active_levels: Dict[str, List[Level]] = {}
         self.history: Dict[str, List[Candle]] = {}
@@ -41,3 +43,11 @@ class LevelEngine:
             if not is_duplicate:
                 self.active_levels[inst].append(level)
                 await event_bus.publish("LEVEL_CREATED", level.model_dump())
+
+        # Cap active levels per instrument (like history) so the list does
+        # not grow unbounded over a long trading session — drop the oldest
+        # by created_at first.
+        if len(self.active_levels[inst]) > self.MAX_ACTIVE_LEVELS:
+            self.active_levels[inst] = sorted(
+                self.active_levels[inst], key=lambda l: l.created_at
+            )[-self.MAX_ACTIVE_LEVELS:]

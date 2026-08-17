@@ -182,6 +182,7 @@ export const App: React.FC = () => {
                 />
                 <MetricCard
                   label="Available Margin"
+                  mock
                   value="₹4,82,500"
                   subValue="Margin used: ₹1,24,500"
                 />
@@ -410,10 +411,10 @@ export const App: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <MetricCard label="Realized MTM" value="+₹18,450" subValueColor="bullish" />
-              <MetricCard label="Unrealized MTM" value="+₹4,852.50" subValueColor="bullish" />
-              <MetricCard label="Total Charges" value="₹340.00" subValueColor="bearish" />
-              <MetricCard label="Net Return %" value="+4.85%" subValueColor="bullish" />
+              <MetricCard label="Realized MTM" mock value="+₹18,450" subValueColor="bullish" />
+              <MetricCard label="Unrealized MTM" mock value="+₹4,852.50" subValueColor="bullish" />
+              <MetricCard label="Total Charges" mock value="₹340.00" subValueColor="bearish" />
+              <MetricCard label="Net Return %" mock value="+4.85%" subValueColor="bullish" />
             </div>
 
             <PositionPanel />

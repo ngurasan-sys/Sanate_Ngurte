@@ -18,7 +18,7 @@ export const LevelPanel: React.FC<LevelPanelProps> = ({ instrument }) => {
           <h3 className="text-zinc-100 font-sans font-bold text-base tracking-wider uppercase">
             Market Levels
           </h3>
-          <p className="text-xs text-zinc-400 font-sans mt-0.5">Real-time swing-based support/resistance from live candles</p>
+          <p className="text-xs text-zinc-400 font-sans mt-0.5">Real-time swing-based support/resistance — {instrument}</p>
         </div>
         <button
           onClick={refetch}
@@ -48,7 +48,7 @@ export const LevelPanel: React.FC<LevelPanelProps> = ({ instrument }) => {
             <div className="space-y-2 font-mono text-sm">
               {resistance.map((l) => (
                 <div key={l.levelId} className="flex justify-between border-b border-zinc-800/60 pb-2">
-                  <span className="text-zinc-400">{l.timeframe} · touched {l.touchCount}x</span>
+                  <span className="text-zinc-400">{l.timeframe}</span>
                   <span className="text-zinc-100 font-semibold">{l.price.toFixed(2)}</span>
                 </div>
               ))}
@@ -59,7 +59,7 @@ export const LevelPanel: React.FC<LevelPanelProps> = ({ instrument }) => {
             <div className="space-y-2 font-mono text-sm">
               {support.map((l) => (
                 <div key={l.levelId} className="flex justify-between border-b border-zinc-800/60 pb-2">
-                  <span className="text-zinc-400">{l.timeframe} · touched {l.touchCount}x</span>
+                  <span className="text-zinc-400">{l.timeframe}</span>
                   <span className="text-zinc-100 font-semibold">{l.price.toFixed(2)}</span>
                 </div>
               ))}

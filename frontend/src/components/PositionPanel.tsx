@@ -61,7 +61,7 @@ export const PositionPanel: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-zinc-100 font-sans font-bold text-base tracking-wider uppercase">
-            Open Positions Monitor
+            Positions
           </h3>
           <p className="text-xs text-zinc-400 font-sans mt-0.5 font-medium">Real positions from Manual Trading and CAS Dislocation</p>
         </div>

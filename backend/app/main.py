@@ -148,12 +148,23 @@ async def lifespan(app: FastAPI):
     set_level_engine(level_engine)
     level_engine.start()
 
+    # Pick the 3-minute aggregator explicitly rather than relying on list
+    # ordering in TickProcessor.__init__.
+    _level_feed_aggregator = next(
+        agg for agg in tick_processor.aggregators if agg.timeframe_minutes == 3
+    )
+
     async def _feed_candle_aggregators(tick) -> None:
         # NOT tick_processor.process(tick) — that method itself publishes
         # MARKET_TICK, and this callback IS the MARKET_TICK subscriber;
         # calling it here would re-publish and re-trigger itself forever.
-        for aggregator in tick_processor.aggregators:
-            await aggregator.process_tick(tick)
+        #
+        # Only the 3-minute aggregator feeds LevelEngine: its history/
+        # active_levels dicts are keyed by instrument ONLY (not by
+        # timeframe), so feeding multiple timeframes' CANDLE_CLOSED events
+        # into it would interleave candles of different durations and
+        # corrupt swing detection.
+        await _level_feed_aggregator.process_tick(tick)
 
     event_bus.subscribe("MARKET_TICK", _feed_candle_aggregators)
 
@@ -284,6 +295,13 @@ async def lifespan(app: FastAPI):
 
         if active_broker.get_active_provider() is not None:
             await active_broker.get_active_provider().disconnect_feed()
+
+        # -----------------------------------------------------
+        # Clear the module-level LevelEngine reference so it does not
+        # outlive this lifespan (a later lifespan installs its own).
+        # -----------------------------------------------------
+
+        set_level_engine(None)
 
         # -----------------------------------------------------
         # Stop Event Bus
