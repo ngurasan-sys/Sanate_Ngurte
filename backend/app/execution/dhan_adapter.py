@@ -48,6 +48,12 @@ class DhanExecutionAdapter:
             "disclosedQuantity": request.disclosed_quantity,
         }
 
+        if mode is ExecutionMode.LIVE:
+            logger.warning(
+                "PLACING A REAL LIVE ORDER (real money): %s %s x%s",
+                request.transaction_type, request.instrument_token, request.quantity,
+            )
+
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -59,17 +65,37 @@ class DhanExecutionAdapter:
             logger.error(detail)
             return OrderResult(status="ERROR", mode=mode, payload=payload, detail=detail)
 
+        if response.status_code >= 500:
+            detail = f"Dhan returned a server error ({response.status_code}): {response.text}. Order status UNKNOWN — verify manually."
+            logger.error(detail)
+            return OrderResult(status="ERROR", mode=mode, payload=payload, detail=detail)
+
         if response.status_code not in (200, 201):
             detail = f"Dhan rejected order ({response.status_code}): {response.text}"
             logger.error(detail)
             return OrderResult(status="REJECTED", mode=mode, payload=payload, detail=detail)
 
-        resp_body = response.json()
-        order_id = resp_body.get("orderId")
+        try:
+            resp_body = response.json()
+            order_id = resp_body.get("orderId")
+            order_status = resp_body.get("orderStatus")
+        except ValueError as exc:
+            detail = (
+                f"Order request succeeded ({response.status_code}) but response body could not be "
+                f"parsed: {exc}. Order status UNKNOWN — verify manually."
+            )
+            logger.error(detail)
+            return OrderResult(status="ERROR", mode=mode, payload=payload, detail=detail)
+
         if not order_id:
             detail = f"Dhan returned {response.status_code} but no orderId: {resp_body}. Order status UNKNOWN — verify manually."
             logger.error(detail)
             return OrderResult(status="ERROR", mode=mode, payload=payload, detail=detail)
+
+        if order_status in ("REJECTED", "CANCELLED"):
+            detail = f"Dhan returned an orderId but orderStatus was {order_status}: {resp_body}."
+            logger.error(detail)
+            return OrderResult(status="REJECTED", mode=mode, payload=payload, detail=detail)
 
         logger.info("Order accepted by Dhan (%s mode). order_id=%s", mode.value, order_id)
         return OrderResult(status="SUBMITTED", mode=mode, order_id=order_id, payload=payload, detail="Dhan returned an orderId.")

@@ -81,3 +81,69 @@ async def test_missing_token_rejected_before_network(monkeypatch):
     result = await DhanExecutionAdapter().place_order(_req(), ExecutionMode.LIVE)
 
     assert result.status == "REJECTED"
+
+
+@pytest.mark.asyncio
+async def test_order_id_with_rejected_status_is_not_submitted(monkeypatch):
+    """Dhan can mint an orderId while still rejecting the order at the
+    exchange leg — orderStatus must be checked, not just orderId presence."""
+    monkeypatch.setattr(da_module.dhan_auth, "load_token", lambda: "live-token")
+    monkeypatch.setattr(da_module.dhan_auth, "load_client_id", lambda: "CLIENT123")
+
+    def handler(request):
+        return httpx.Response(200, json={"orderId": "DHAN789", "orderStatus": "REJECTED"})
+    monkeypatch.setattr(da_module.httpx, "AsyncClient", lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(handler)))
+
+    result = await DhanExecutionAdapter().place_order(_req(), ExecutionMode.LIVE)
+
+    assert result.status == "REJECTED"
+    assert result.is_real_submission is False
+
+
+@pytest.mark.asyncio
+async def test_malformed_json_body_is_error_not_exception(monkeypatch):
+    monkeypatch.setattr(da_module.dhan_auth, "load_token", lambda: "live-token")
+    monkeypatch.setattr(da_module.dhan_auth, "load_client_id", lambda: "CLIENT123")
+
+    def handler(request):
+        return httpx.Response(200, content=b"<html>not json</html>", headers={"content-type": "text/html"})
+    monkeypatch.setattr(da_module.httpx, "AsyncClient", lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(handler)))
+
+    result = await DhanExecutionAdapter().place_order(_req(), ExecutionMode.LIVE)
+
+    assert result.status == "ERROR"
+    assert result.is_real_submission is False
+    assert "UNKNOWN" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_server_error_status_is_error_not_rejected(monkeypatch):
+    """A 5xx could mean the order was actually accepted upstream and only
+    the response got lost — it must not be reported as a clean rejection."""
+    monkeypatch.setattr(da_module.dhan_auth, "load_token", lambda: "live-token")
+    monkeypatch.setattr(da_module.dhan_auth, "load_client_id", lambda: "CLIENT123")
+
+    def handler(request):
+        return httpx.Response(503, text="Service Unavailable")
+    monkeypatch.setattr(da_module.httpx, "AsyncClient", lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(handler)))
+
+    result = await DhanExecutionAdapter().place_order(_req(), ExecutionMode.LIVE)
+
+    assert result.status == "ERROR"
+    assert result.is_real_submission is False
+
+
+@pytest.mark.asyncio
+async def test_client_error_status_is_still_rejected(monkeypatch):
+    """4xx (bad request / invalid params / insufficient funds) is a genuine
+    client-side rejection, unlike a 5xx — must remain REJECTED."""
+    monkeypatch.setattr(da_module.dhan_auth, "load_token", lambda: "live-token")
+    monkeypatch.setattr(da_module.dhan_auth, "load_client_id", lambda: "CLIENT123")
+
+    def handler(request):
+        return httpx.Response(400, text="Bad Request")
+    monkeypatch.setattr(da_module.httpx, "AsyncClient", lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(handler)))
+
+    result = await DhanExecutionAdapter().place_order(_req(), ExecutionMode.LIVE)
+
+    assert result.status == "REJECTED"
