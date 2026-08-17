@@ -41,6 +41,12 @@ def _sync_legacy_engine_enabled(strategy_id: str, enabled: bool) -> None:
     elif strategy_id == "ofao":
         from backend.app.strategies.order_flow_absorption.engine import ofao_engine
         ofao_engine.enable() if enabled else ofao_engine.disable()
+    elif strategy_id == "two_candle":
+        from backend.app.strategies.two_candle_engine import two_candle_engine
+        two_candle_engine.enable() if enabled else two_candle_engine.disable()
+    elif strategy_id == "three_minute_gap":
+        from backend.app.strategies.three_minute_gap.engine import three_minute_gap_engine
+        three_minute_gap_engine.enable() if enabled else three_minute_gap_engine.disable()
 
 
 class ExecutionModeRequest(BaseModel):

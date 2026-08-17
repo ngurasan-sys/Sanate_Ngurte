@@ -466,3 +466,6 @@ class ATRStrategiesEngine:
             "timestamp": datetime.now()
         }
         await event_bus.publish("STRATEGY_SIGNAL", signal)
+
+
+atr_strategies_engine = ATRStrategiesEngine()

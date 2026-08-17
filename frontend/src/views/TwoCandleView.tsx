@@ -1,7 +1,10 @@
 import React from 'react';
 import { TwoCandleDashboard } from '../components/two_candle/TwoCandleDashboard';
+import { useTwoCandleWebSocket } from '../hooks/useTwoCandleWebSocket';
 
 export const TwoCandleView: React.FC = () => {
+  useTwoCandleWebSocket('NIFTY');
+
   return (
     <div className="h-full w-full">
       <div className="mb-6">

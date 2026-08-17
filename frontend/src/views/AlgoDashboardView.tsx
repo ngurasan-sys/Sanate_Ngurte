@@ -1,5 +1,5 @@
 import OpenHighTable from "../components/open_high/OpenHighTable";
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAlgoStore } from '../stores/algoStore';
 import type { ExecutionMode, TradingMode } from '../stores/algoStore';
 import { useSystemStore } from '../stores/systemStore';
@@ -9,17 +9,38 @@ import StatusBadge from '../components/StatusBadge';
 import ManualTradingPanel from '../components/ManualTradingPanel';
 import AlgoTradingConfigPanel from '../components/AlgoTradingConfigPanel';
 import StrategyControlPanel from '../components/StrategyControlPanel';
-import { Play, Square, Pause, Activity, Zap, Shield, Server, Layers, Cpu, Compass, HardDrive, User, Bot } from 'lucide-react';
+import { Play, Square, Pause, Activity, Zap, Shield, Server, Layers, Cpu, Compass, HardDrive, User, Bot, Settings2, X } from 'lucide-react';
 
 const ARM_CONFIRMATION_PHRASE = 'ARM LIVE TRADING';
 
 export const AlgoDashboardView: React.FC = () => {
   const {
-    algoEngineStatus, executionMode, tradingMode, signals, pipelineMetrics, riskMetrics,
+    algoEngineStatus, executionMode, tradingMode, armed, signals, pipelineMetrics, riskMetrics,
     setAlgoEngineStatus, setExecutionMode, setTradingMode
   } = useAlgoStore();
 
   const { brokerageStatus } = useSystemStore();
+  const [activeBrokerId, setActiveBrokerId] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Active Broker display — reads the existing active_broker registry
+  // (GET /api/v1/brokers/active), not a new broker selector.
+  useEffect(() => {
+    const fetchActiveBroker = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const res = await fetch(`${baseUrl}/api/v1/brokers/active`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setActiveBrokerId(data.broker_id || null);
+      } catch {
+        // keep previous value
+      }
+    };
+    fetchActiveBroker();
+    const interval = setInterval(fetchActiveBroker, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Keeps executionMode synced to the REAL backend truth
   // (order_gateway.resolve_mode()) — see hook for why this isn't a
@@ -112,6 +133,58 @@ export const AlgoDashboardView: React.FC = () => {
 
   return (
     <div className="space-y-6 select-none pb-12">
+      {/* PAGE HEADER */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-zinc-100 font-sans font-bold text-lg uppercase tracking-wider">Algo Dashboard</h2>
+          <p className="text-xs text-zinc-400 font-sans mt-0.5">Monitor and control all your strategies in one place</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 uppercase tracking-wider">Global Trading:</span>
+            <StatusBadge status={armed ? 'CONNECTED' : 'DISCONNECTED'} />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 uppercase tracking-wider">Global Mode:</span>
+            <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 font-bold uppercase">{tradingMode}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 uppercase tracking-wider">Active Broker:</span>
+            <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 font-bold uppercase">{activeBrokerId || 'NONE'}</span>
+          </div>
+          <button
+            onClick={() => setShowSettings(true)}
+            aria-label="Open Algo Trading Configuration"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+          >
+            <Settings2 size={12} /> <span className="uppercase tracking-wider font-bold text-[10px]">Settings</span>
+          </button>
+        </div>
+      </div>
+
+      {/* SETTINGS MODAL — opens the EXISTING Algo Trading Configuration,
+          not a second config page/system. */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-lg max-w-2xl w-full max-h-[85vh] overflow-y-auto">
+            <div className="h-14 px-5 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-zinc-950">
+              <span className="font-sans font-bold text-sm tracking-wider uppercase text-zinc-100">Algo Trading Configuration</span>
+              <button
+                onClick={() => setShowSettings(false)}
+                aria-label="Close settings"
+                className="p-1.5 hover:bg-zinc-850 rounded-lg text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="p-5">
+              <AlgoTradingConfigPanel />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TOP STATUS BAR */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
         <div className="flex items-center gap-2">

@@ -36,6 +36,8 @@ class ConnectionManager:
             "cas_dislocation": {},
             "cas_dislocation_positions": {},
             "ofao": {},
+            "two_candle": {},
+            "three_minute_gap": {},
             # frontend/src/views/BtstDashboardView.tsx connects here but the
             # channel was missing entirely, so the socket was rejected
             # immediately and the view infinite-loop-reconnected every 3s.
@@ -79,6 +81,8 @@ class ConnectionManager:
         event_bus.subscribe("manual_trading", lambda e: self.broadcast("manual_trading", e))
         event_bus.subscribe("cas_dislocation", lambda e: self.broadcast("cas_dislocation", e))
         event_bus.subscribe("cas_dislocation_positions", lambda e: self.broadcast("cas_dislocation_positions", e))
+        event_bus.subscribe("two_candle_state", lambda e: self.broadcast("two_candle", e))
+        event_bus.subscribe("three_minute_gap_state", lambda e: self.broadcast("three_minute_gap", e))
 
     def _publish_model_or_dict(self, channel: str, payload):
         try:

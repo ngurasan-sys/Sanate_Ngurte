@@ -1,16 +1,14 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import StatusBadge from './StatusBadge';
 import { useThreeMinuteGapStore } from '../stores/threeMinuteGapStore';
+import { useThreeMinuteGapWebSocket } from '../hooks/useThreeMinuteGapWebSocket';
 
 const ThreeMinuteGapPanel: React.FC = () => {
   const store = useThreeMinuteGapStore();
 
-  // TODO: Wire to real WebSocket at ws://localhost:8000/ws/three_minute_gap
-  // For now, shows NO DATA until backend provides live data
-  useEffect(() => {
-    // Removed fake isConnected: true — now reflects real backend state
-    // Once WebSocket is wired, real data will populate here
-  }, []);
+  // Wired to backend/app/strategies/three_minute_gap/engine.py's real FVG
+  // detection + SuperTrend/OI confluence, broadcast on ws/three_minute_gap.
+  useThreeMinuteGapWebSocket('NIFTY');
 
   return (
     <div className="space-y-6 select-none">

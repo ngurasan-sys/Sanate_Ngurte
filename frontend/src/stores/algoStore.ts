@@ -68,6 +68,10 @@ interface AlgoState {
   algoEngineStatus: AlgoEngineStatus;
   executionMode: ExecutionMode;
   tradingMode: TradingMode;
+  // Real LIVE arm state (execution_runtime_state.is_armed(), via
+  // GET /api/v1/execution/status) — the "Global Trading ON/OFF" header
+  // display reads this rather than introducing a second kill switch.
+  armed: boolean;
   strategies: StrategyMeta[];
   signals: Signal[];
   pipelineMetrics: PipelineMetrics;
@@ -76,6 +80,7 @@ interface AlgoState {
   setAlgoEngineStatus: (status: AlgoEngineStatus) => void;
   setExecutionMode: (mode: ExecutionMode) => void;
   setTradingMode: (mode: TradingMode) => void;
+  setArmed: (armed: boolean) => void;
   setStrategies: (strategies: StrategyMeta[]) => void;
   addSignal: (signal: Signal) => void;
   updatePipelineMetrics: (metrics: Partial<PipelineMetrics>) => void;
@@ -86,6 +91,7 @@ export const useAlgoStore = create<AlgoState>((set) => ({
   algoEngineStatus: 'STOPPED',
   executionMode: 'DATA_ONLY',
   tradingMode: 'AUTO',
+  armed: false,
   strategies: [],
   signals: [],
   pipelineMetrics: {
@@ -114,6 +120,7 @@ export const useAlgoStore = create<AlgoState>((set) => ({
   setAlgoEngineStatus: (status) => set({ algoEngineStatus: status }),
   setExecutionMode: (mode) => set({ executionMode: mode }),
   setTradingMode: (mode) => set({ tradingMode: mode }),
+  setArmed: (armed) => set({ armed }),
   setStrategies: (strategies) => set({ strategies }),
   addSignal: (signal) => set((state) => ({
     signals: [signal, ...state.signals].slice(0, 100) // Keep last 100 signals

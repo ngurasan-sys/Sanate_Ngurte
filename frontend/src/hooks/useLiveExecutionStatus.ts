@@ -16,6 +16,7 @@ const RESOLVED_MODE_TO_UI: Record<string, ExecutionMode> = {
 // /api/v1/execution/arm and /disarm (see handleModeChange in AlgoDashboardView).
 export function useLiveExecutionStatus() {
   const setExecutionMode = useAlgoStore((s) => s.setExecutionMode);
+  const setArmed = useAlgoStore((s) => s.setArmed);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -29,6 +30,9 @@ export function useLiveExecutionStatus() {
         if (resolvedMode && RESOLVED_MODE_TO_UI[resolvedMode]) {
           setExecutionMode(RESOLVED_MODE_TO_UI[resolvedMode]);
         }
+        if (typeof data.armed === 'boolean') {
+          setArmed(data.armed);
+        }
       } catch (error) {
         console.warn('Failed to fetch execution status:', error);
       }
@@ -37,5 +41,5 @@ export function useLiveExecutionStatus() {
     fetchStatus();
     const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
-  }, [setExecutionMode]);
+  }, [setExecutionMode, setArmed]);
 }

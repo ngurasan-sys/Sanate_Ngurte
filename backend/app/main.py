@@ -57,6 +57,9 @@ from backend.app.strategies.option_analytics import option_analytics_engine
 from backend.app.strategies.manual_trading import manual_trading_engine
 from backend.app.strategies.cas_dislocation.engine import cas_dislocation_engine
 from backend.app.strategies.order_flow_absorption.engine import ofao_engine
+from backend.app.strategies.two_candle_engine import two_candle_engine
+from backend.app.strategies.three_minute_gap.engine import three_minute_gap_engine
+from backend.app.strategies.atr.atr_strategies_engine import atr_strategies_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
 from backend.app.market_data.processor import TickProcessor
 from backend.app.levels.engine import LevelEngine
@@ -148,6 +151,9 @@ async def lifespan(app: FastAPI):
     manual_trading_engine.start()
     cas_dislocation_engine.start()
     ofao_engine.start()
+    two_candle_engine.start()
+    three_minute_gap_engine.start()
+    atr_strategies_engine.start()
     market_breadth_engine.start()
 
     tick_processor = TickProcessor()
@@ -176,6 +182,9 @@ async def lifespan(app: FastAPI):
     register_strategy("expiry_reversal", "Expiry Day Reversal", "Expiry-day mean-reversion strategy.", engine=expiry_reversal_engine)
     register_strategy("cas_dislocation", "CAS Dislocation", "Cash-and-carry / synthetic dislocation strategy.", engine=cas_dislocation_engine)
     register_strategy("ofao", "Order Flow Absorption (OFAO)", "Footprint-based absorption/dominance option strategy.", engine=ofao_engine)
+    register_strategy("two_candle", "2 Candle Scalper", "3-minute volume/indicator/OI confluence scalper.", engine=two_candle_engine)
+    register_strategy("three_minute_gap", "3 Minute Gap", "3-minute Fair Value Gap (FVG) discovery and pullback entry.", engine=three_minute_gap_engine)
+    register_strategy("atr_strategies", "ATR Strategies", "Asymmetric Trending OI & ATR Exhaustion Strategy.", engine=atr_strategies_engine)
 
     # Pick the 3-minute aggregator explicitly rather than relying on list
     # ordering in TickProcessor.__init__.
@@ -318,6 +327,15 @@ async def lifespan(app: FastAPI):
 
         if hasattr(ofao_engine, "stop"):
             ofao_engine.stop()
+
+        if hasattr(two_candle_engine, "stop"):
+            two_candle_engine.stop()
+
+        if hasattr(three_minute_gap_engine, "stop"):
+            three_minute_gap_engine.stop()
+
+        if hasattr(atr_strategies_engine, "stop"):
+            atr_strategies_engine.stop()
 
         if hasattr(market_breadth_engine, "stop"):
             market_breadth_engine.stop()
