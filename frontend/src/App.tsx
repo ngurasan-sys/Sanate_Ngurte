@@ -182,6 +182,7 @@ export const App: React.FC = () => {
                 />
                 <MetricCard
                   label="Available Margin"
+                  mock
                   value="₹4,82,500"
                   subValue="Margin used: ₹1,24,500"
                 />
@@ -238,7 +239,7 @@ export const App: React.FC = () => {
               <p className="text-xs text-zinc-400 font-sans mt-0.5">Comprehensive Spot and derivatives risk analytics</p>
             </div>
             {renderIndexDetailCard('NIFTY')}
-            <LevelPanel />
+            <LevelPanel instrument="NSE_INDEX|Nifty 50" />
           </div>
         );
 
@@ -250,7 +251,7 @@ export const App: React.FC = () => {
               <p className="text-xs text-zinc-400 font-sans mt-0.5">Comprehensive Spot and derivatives risk analytics</p>
             </div>
             {renderIndexDetailCard('SENSEX')}
-            <LevelPanel />
+            <LevelPanel instrument="BSE_INDEX|SENSEX" />
           </div>
         );
 
@@ -276,7 +277,7 @@ export const App: React.FC = () => {
         return <OptionAnalyticsView />;
 
       case 'LEVELS':
-        return <LevelPanel />;
+        return <LevelPanel instrument="NSE_INDEX|Nifty 50" />;
 
       case 'TECHNICAL':
         return (
@@ -410,10 +411,10 @@ export const App: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <MetricCard label="Realized MTM" value="+₹18,450" subValueColor="bullish" />
-              <MetricCard label="Unrealized MTM" value="+₹4,852.50" subValueColor="bullish" />
-              <MetricCard label="Total Charges" value="₹340.00" subValueColor="bearish" />
-              <MetricCard label="Net Return %" value="+4.85%" subValueColor="bullish" />
+              <MetricCard label="Realized MTM" mock value="+₹18,450" subValueColor="bullish" />
+              <MetricCard label="Unrealized MTM" mock value="+₹4,852.50" subValueColor="bullish" />
+              <MetricCard label="Total Charges" mock value="₹340.00" subValueColor="bearish" />
+              <MetricCard label="Net Return %" mock value="+4.85%" subValueColor="bullish" />
             </div>
 
             <PositionPanel />

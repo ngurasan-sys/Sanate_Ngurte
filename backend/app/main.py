@@ -28,6 +28,7 @@ from backend.app.api.endpoints.cas_dislocation import router as cas_dislocation_
 from backend.app.api.endpoints.backtest import router as backtest_router
 from backend.app.api.endpoints.footprint import router as footprint_router
 from backend.app.api.endpoints.ofao import router as ofao_router
+from backend.app.api.endpoints.executions import router as executions_router
 
 from backend.app.engines.opportunity import opportunity_engine
 from backend.app.engines.decision import decision_engine
@@ -50,6 +51,9 @@ from backend.app.strategies.manual_trading import manual_trading_engine
 from backend.app.strategies.cas_dislocation.engine import cas_dislocation_engine
 from backend.app.strategies.order_flow_absorption.engine import ofao_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
+from backend.app.market_data.processor import TickProcessor
+from backend.app.levels.engine import LevelEngine
+from backend.app.api.endpoints.levels import set_level_engine
 from backend.app.market_data.upstox_provider import upstox_provider
 from backend.app.execution.upstox_adapter import upstox_execution_adapter
 from backend.app.core import upstox_auth
@@ -138,6 +142,31 @@ async def lifespan(app: FastAPI):
     cas_dislocation_engine.start()
     ofao_engine.start()
     market_breadth_engine.start()
+
+    tick_processor = TickProcessor()
+    level_engine = LevelEngine()
+    set_level_engine(level_engine)
+    level_engine.start()
+
+    # Pick the 3-minute aggregator explicitly rather than relying on list
+    # ordering in TickProcessor.__init__.
+    _level_feed_aggregator = next(
+        agg for agg in tick_processor.aggregators if agg.timeframe_minutes == 3
+    )
+
+    async def _feed_candle_aggregators(tick) -> None:
+        # NOT tick_processor.process(tick) — that method itself publishes
+        # MARKET_TICK, and this callback IS the MARKET_TICK subscriber;
+        # calling it here would re-publish and re-trigger itself forever.
+        #
+        # Only the 3-minute aggregator feeds LevelEngine: its history/
+        # active_levels dicts are keyed by instrument ONLY (not by
+        # timeframe), so feeding multiple timeframes' CANDLE_CLOSED events
+        # into it would interleave candles of different durations and
+        # corrupt swing detection.
+        await _level_feed_aggregator.process_tick(tick)
+
+    event_bus.subscribe("MARKET_TICK", _feed_candle_aggregators)
 
     # If no broker has been explicitly activated yet but Upstox already
     # has a saved token, activate it automatically — this preserves
@@ -268,6 +297,13 @@ async def lifespan(app: FastAPI):
             await active_broker.get_active_provider().disconnect_feed()
 
         # -----------------------------------------------------
+        # Clear the module-level LevelEngine reference so it does not
+        # outlive this lifespan (a later lifespan installs its own).
+        # -----------------------------------------------------
+
+        set_level_engine(None)
+
+        # -----------------------------------------------------
         # Stop Event Bus
         # -----------------------------------------------------
 
@@ -371,6 +407,10 @@ app.include_router(
 
 app.include_router(
     backtest_router
+)
+
+app.include_router(
+    executions_router
 )
 
 

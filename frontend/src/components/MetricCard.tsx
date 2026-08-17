@@ -5,6 +5,8 @@ interface MetricCardProps {
   value: string | number;
   subValue?: string | number;
   subValueColor?: 'bullish' | 'bearish' | 'neutral' | 'muted';
+  /** Marks a card whose value is still hardcoded mock data, not live. */
+  mock?: boolean;
 }
 
 /**
@@ -18,6 +20,7 @@ export const MetricCard: React.FC<MetricCardProps> = memo(({
   value,
   subValue,
   subValueColor = 'neutral',
+  mock = false,
 }) => {
   const getSubColorClass = () => {
     switch (subValueColor) {
@@ -34,7 +37,14 @@ export const MetricCard: React.FC<MetricCardProps> = memo(({
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 flex flex-col justify-between h-32 select-none">
-      <span className="text-sm text-zinc-400 uppercase tracking-wider font-medium">{label}</span>
+      <span className="text-sm text-zinc-400 uppercase tracking-wider font-medium flex items-center gap-2">
+        {label}
+        {mock && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 tracking-normal">
+            MOCK
+          </span>
+        )}
+      </span>
       <div className="flex items-baseline justify-between mt-2">
         <span className="font-mono text-2xl font-semibold text-zinc-100 tabular-nums">
           {value}

@@ -1,92 +1,99 @@
 import React from 'react';
-import { usePortfolioStore } from '../stores/portfolioStore';
+import { useLivePositions } from '../hooks/useLivePositions';
 import FoldableDataTable from './FoldableDataTable';
 import type { Column } from './FoldableDataTable';
 import StatusBadge from './StatusBadge';
-import type { Position } from '../mock/interfaces';
+import type { LivePosition } from '../types/live';
 
 export const PositionPanel: React.FC = () => {
-  const { positions } = usePortfolioStore();
+  const { positions, loading, error, refetch } = useLivePositions();
 
-  const columns: Column<Position>[] = [
+  const columns: Column<LivePosition>[] = [
     {
       header: 'Instrument',
-      accessor: (item: Position) => <span className="font-bold text-zinc-100">{item.instrument}</span>,
+      accessor: (item) => <span className="font-bold text-zinc-100">{item.instrument}</span>,
+    },
+    {
+      header: 'Source',
+      accessor: (item) => <StatusBadge status={item.source} />,
+      align: 'center',
     },
     {
       header: 'Qty',
-      accessor: (item: Position) => <span className="font-mono text-zinc-300 tabular-nums">{item.qty}</span>,
+      accessor: (item) => <span className="font-mono text-zinc-300 tabular-nums">{item.quantity}</span>,
       align: 'right',
     },
     {
-      header: 'LTP',
-      accessor: (item: Position) => <span className="font-mono text-zinc-200 tabular-nums">₹{item.ltp.toFixed(2)}</span>,
-      align: 'right',
-    },
-    {
-      header: 'P&L',
-      accessor: (item: Position) => (
-        <span className={`font-mono font-bold tabular-nums ${item.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-          {item.pnl >= 0 ? '+' : ''}₹{item.pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-        </span>
-      ),
+      header: 'Entry Price',
+      accessor: (item) => <span className="font-mono text-zinc-200 tabular-nums">₹{item.entryPrice.toFixed(2)}</span>,
       align: 'right',
     },
     {
       header: 'Status',
-      accessor: (item: Position) => <StatusBadge status={item.status} />,
+      accessor: (item) => <StatusBadge status={item.status} />,
       align: 'center',
     },
   ];
 
-  const renderExpanded = (item: Position) => {
-    return (
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-6 select-none p-2 text-xs">
-        <div>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Entry Price</p>
-          <p className="font-mono text-sm text-zinc-200 mt-1">₹{item.entry.toFixed(2)}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Avg Price</p>
-          <p className="font-mono text-sm text-zinc-200 mt-1">₹{item.avgPrice.toFixed(2)}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Stop Loss</p>
-          <p className="font-mono text-sm text-rose-400 mt-1">₹{item.stopLoss.toFixed(2)}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Target</p>
-          <p className="font-mono text-sm text-emerald-400 mt-1">₹{item.target.toFixed(2)}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Greeks (Δ / Γ / Θ)</p>
-          <p className="font-mono text-sm text-zinc-200 mt-1">
-            {item.delta.toFixed(2)} / {item.gamma.toFixed(4)} / {item.theta.toFixed(1)}
-          </p>
-        </div>
-        <div>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Strategy Source</p>
-          <p className="text-zinc-300 font-semibold mt-1">{item.strategy}</p>
-        </div>
+  const renderExpanded = (item: LivePosition) => (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 select-none p-2 text-xs">
+      <div>
+        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Created</p>
+        <p className="font-mono text-sm text-zinc-200 mt-1">{item.createdAt}</p>
       </div>
-    );
-  };
+      <div>
+        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Closed</p>
+        <p className="font-mono text-sm text-zinc-200 mt-1">{item.closedAt ?? '—'}</p>
+      </div>
+      <div>
+        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Exit Reason</p>
+        <p className="text-zinc-300 mt-1">{item.exitReason ?? '—'}</p>
+      </div>
+      <div>
+        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Option Type</p>
+        <p className="text-zinc-300 mt-1">{item.optionType}</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-zinc-100 font-sans font-bold text-base tracking-wider uppercase">
-          Open Positions Monitor
-        </h3>
-        <p className="text-xs text-zinc-400 font-sans mt-0.5 font-medium">Real-time valuation, mark-to-market margins and risk thresholds</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-zinc-100 font-sans font-bold text-base tracking-wider uppercase">
+            Positions
+          </h3>
+          <p className="text-xs text-zinc-400 font-sans mt-0.5 font-medium">Real positions from Manual Trading and CAS Dislocation</p>
+        </div>
+        <button
+          onClick={refetch}
+          disabled={loading}
+          className="px-3 py-1.5 rounded-lg text-xs font-sans bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+        >
+          Refresh
+        </button>
       </div>
 
-      <FoldableDataTable
-        data={positions}
-        columns={columns}
-        rowKey={(item) => item.id}
-        renderExpanded={renderExpanded}
-      />
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-mono px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
+
+      {!error && positions.length === 0 && !loading && (
+        <div className="text-xs text-zinc-500 font-mono px-4 py-6 text-center border border-zinc-800 rounded-lg">
+          No positions.
+        </div>
+      )}
+
+      {positions.length > 0 && (
+        <FoldableDataTable
+          data={positions}
+          columns={columns}
+          rowKey={(item) => item.id}
+          renderExpanded={renderExpanded}
+        />
+      )}
     </div>
   );
 };
