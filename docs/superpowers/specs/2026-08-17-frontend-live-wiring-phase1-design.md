@@ -71,41 +71,57 @@ in the `executions` table) down to: `timestamp, instrument, action,
 status`. `OrderPanel` fetches `GET /api/v1/executions` on mount plus a
 manual refresh button, same pattern as Positions.
 
-## Levels (pivot-point engine)
+## Levels (wire the existing, never-started detection engine)
 
-**Backend:** new `backend/app/engines/level_engine.py` (or under
-`strategies/`, matching wherever similar lightweight engines live — check
-`backend/app/engines/` for the existing pattern before picking a
-location). Computes standard CPR/pivot levels from the **previous
-trading day's** daily candle: `fetch_historical_candles` via
-`active_broker.get_active_provider()` for a small `from_date`/`to_date`
-window ending yesterday, taking the most recent completed daily candle's
-high/low/close.
+**Correction from initial investigation:** a full real-time support/resistance
+engine already exists in `backend/app/levels/` (`LevelEngine`,
+`SupportResistanceDetector`, `Level` model) — it just has never been
+instantiated or started anywhere. `LevelEngine.process_candle()` subscribes
+to `CANDLE_CLOSED` and detects swing-high/low support/resistance levels
+from real closed candles. `CANDLE_CLOSED` is itself published by
+`market_data/processor.py`'s `CandleAggregator`/`TickProcessor`, which is
+also never instantiated. Both pieces are real, already-coded, and simply
+disconnected from the app — this is the "just needs wiring" case Bucket A
+was supposed to be, once traced far enough. Building a parallel pivot-point
+calculator (the original plan) would have duplicated working code.
 
-Standard formulas (previous day's H/L/C):
-- Pivot `P = (H + L + C) / 3`
-- `R1 = 2P - L`, `S1 = 2P - H`
-- `R2 = P + (H - L)`, `S2 = P - (H - L)`
-- CPR: `TC = (P - BC) + P` where `BC = (H + L) / 2`, `Pivot = P`
+**Backend wiring (`main.py`):** at startup, construct one `TickProcessor()`
+(from `market_data/processor.py` — it already holds 3m/5m/15m
+`CandleAggregator`s) and one `LevelEngine()`. The real live feed
+(`UpstoxProvider`/`DhanProvider`) already publishes ticks by calling
+`event_bus.publish("MARKET_TICK", tick)` directly — **do not** route those
+through `TickProcessor.process()`, since that method itself re-publishes
+`MARKET_TICK`, which would create an infinite publish loop if it were also
+the `MARKET_TICK` subscriber. Instead, subscribe a small wrapper to
+`MARKET_TICK` that feeds each of `tick_processor.aggregators[i].process_tick(tick)`
+directly (bypassing the publish half of `TickProcessor.process`).
+`level_engine.start()` (subscribes itself to `CANDLE_CLOSED`, already
+written) and `set_level_engine(level_engine)` (registers it with the
+existing, currently-always-empty `levels.py` router) run once at startup.
 
-Output shape matches what `levels.py`'s existing `l.model_dump()` /
-`l.level_type` calls already expect (`Level` model with `level_type` one
-of `"Support"`/`"Resistance"`/`"Pivot"`/`"CPR"` — check the exact existing
-`Level` Pydantic model, if one already exists partially defined, and match
-it rather than inventing a parallel shape). Compute for NIFTY and SENSEX
-(the two instruments Levels pages exist for today). `set_level_engine()`
-gets called once at app startup in `main.py`, same pattern as every other
-engine.
+**Explicitly out of scope:** `backend/app/strategies/level_based/`'s
+`LevelStrategyEngine` (8 real trading strategies — rejection, breakout,
+liquidity sweep, etc.) also exists and subscribes to `MARKET_TICK`, but
+wiring it in would push real `STRATEGY_SIGNAL`s into the live
+opportunity→decision→risk→execution pipeline — i.e. it could start
+producing real trade decisions (still gated by DRY_RUN, but that's a much
+bigger blast radius than "show real levels on a dashboard page"). This
+plan wires the data-only half (`LevelEngine`), not the trading-strategy
+half (`LevelStrategyEngine`) — a deliberate scope boundary, not an
+oversight.
 
-If `active_broker` has no active provider (no broker connected/active) or
-the historical-candle fetch fails, `active_levels` for that instrument
+If no broker is active, no real ticks ever arrive, so `active_levels`
 stays empty — matches the existing honest-empty behavior, no fabricated
 levels.
 
-**Frontend:** `LevelPanel` drops its hardcoded `priceData`/CPR literals,
-fetches `GET /api/v1/levels/{instrument}` on mount, renders whatever
-comes back (including genuinely empty, if no broker is active — the UI
-should say so, not show stale/fake numbers).
+**Frontend:** `LevelPanel` drops its hardcoded `priceData`/CPR/Fibonacci
+literals and toggle buttons (the real engine computes neither CPR nor
+Fibonacci — only swing-based Support/Resistance), takes an `instrument`
+prop (it currently renders identically for both `MARKET_NIFTY` and
+`MARKET_SENSEX`, which is itself a mockup artifact), fetches
+`GET /api/v1/levels/{instrument}` on mount, and renders the real
+`Level[]` — grouped into Resistance (above current price) / Support
+(below), sorted by proximity — or an honest empty state if none exist yet.
 
 ## Testing
 
