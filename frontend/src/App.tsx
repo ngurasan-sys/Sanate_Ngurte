@@ -238,7 +238,7 @@ export const App: React.FC = () => {
               <p className="text-xs text-zinc-400 font-sans mt-0.5">Comprehensive Spot and derivatives risk analytics</p>
             </div>
             {renderIndexDetailCard('NIFTY')}
-            <LevelPanel />
+            <LevelPanel instrument="NSE_INDEX|Nifty 50" />
           </div>
         );
 
@@ -250,7 +250,7 @@ export const App: React.FC = () => {
               <p className="text-xs text-zinc-400 font-sans mt-0.5">Comprehensive Spot and derivatives risk analytics</p>
             </div>
             {renderIndexDetailCard('SENSEX')}
-            <LevelPanel />
+            <LevelPanel instrument="BSE_INDEX|SENSEX" />
           </div>
         );
 
@@ -276,7 +276,7 @@ export const App: React.FC = () => {
         return <OptionAnalyticsView />;
 
       case 'LEVELS':
-        return <LevelPanel />;
+        return <LevelPanel instrument="NSE_INDEX|Nifty 50" />;
 
       case 'TECHNICAL':
         return (

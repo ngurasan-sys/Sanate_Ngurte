@@ -19,3 +19,12 @@ export interface LiveOrder {
   action: string;
   status: string;
 }
+
+export interface LiveLevel {
+  levelId: string;
+  price: number;
+  levelType: 'Support' | 'Resistance';
+  timeframe: string;
+  strength: number;
+  touchCount: number;
+}
