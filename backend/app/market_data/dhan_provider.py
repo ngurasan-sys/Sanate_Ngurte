@@ -1,10 +1,11 @@
 """Dhan's MarketDataProvider implementation. Every method translates
 Dhan's real API responses into the same canonical shapes Upstox's provider
-already returns, so no strategy code changes. Feed connect/disconnect are
-implemented in a follow-up task — calling them here raises, rather than
-silently doing nothing.
+already returns, so no strategy code changes. connect_feed()/disconnect_feed()
+open and close Dhan's binary WebSocket feed, subscribing to the LTP ticker
+packet for the platform's tracked indices (NIFTY/BANKNIFTY/SENSEX).
 """
 
+import json
 import logging
 import struct
 from datetime import date
@@ -41,14 +42,38 @@ class DhanProvider:
         return dhan_instrument_master.security_id_for_index(underlying)
 
     def _parse_packet(self, raw: bytes) -> Optional[Tick]:
+        # Dhan's binary feed is little-endian (per DhanHQ v2 docs: "The data
+        # on DhanHQ Websockets are sent in Little Endian"), NOT the network-
+        # byte-order big-endian struct format you'd otherwise default to.
         if len(raw) < 16:
             return None
-        code, _msg_len, _segment, security_id = struct.unpack(">BHBI", raw[:8])
+        code, _msg_len, _segment, security_id = struct.unpack("<BHBI", raw[:8])
         if code != LTP_FEED_RESPONSE_CODE:
             return None
-        ltp, _trade_time = struct.unpack(">fI", raw[8:16])
+        ltp, _trade_time = struct.unpack("<fI", raw[8:16])
         from datetime import datetime
         return Tick(instrument=str(security_id), price=float(ltp), volume=0.0, timestamp=datetime.now(), is_trade=True)
+
+    def _parse_frame(self, raw: bytes) -> List[Tick]:
+        """A single WebSocket binary frame from Dhan can multiplex several
+        packets back-to-back (each with its own 8-byte header whose
+        message_length tells you how far to advance for the next one).
+        Walk the whole frame rather than only looking at the first packet,
+        so ticks after the first in a frame aren't silently dropped."""
+        ticks: List[Tick] = []
+        offset = 0
+        while offset + 8 <= len(raw):
+            _code, msg_len, _segment, _security_id = struct.unpack("<BHBI", raw[offset:offset + 8])
+            if msg_len <= 0:
+                break
+            packet = raw[offset:offset + msg_len]
+            if len(packet) < msg_len:
+                break
+            tick = self._parse_packet(packet)
+            if tick is not None:
+                ticks.append(tick)
+            offset += msg_len
+        return ticks
 
     async def connect_feed(self) -> None:
         import websockets  # only imported here so the module stays importable without the dependency installed, matching upstox_v3.py's UPSTOX_AVAILABLE pattern
@@ -62,6 +87,24 @@ class DhanProvider:
         url = f"{DHAN_FEED_WS_URL}?version=2&token={token}&clientId={client_id}&authType=2"
         self._ws = await websockets.connect(url)
         self._running = True
+
+        instrument_list = []
+        for underlying in ("NIFTY", "BANKNIFTY", "SENSEX"):
+            try:
+                security_id = dhan_instrument_master.security_id_for_index(underlying)
+            except Exception:
+                logger.warning("Could not resolve Dhan security_id for %s; skipping feed subscription for it.", underlying)
+                continue
+            instrument_list.append({"ExchangeSegment": "IDX_I", "SecurityId": str(security_id)})
+
+        if instrument_list:
+            subscribe_message = {
+                "RequestCode": 15,  # Subscribe - Ticker Packet (Dhan feed request code annexure)
+                "InstrumentCount": len(instrument_list),
+                "InstrumentList": instrument_list,
+            }
+            await self._ws.send(json.dumps(subscribe_message))
+
         import asyncio
         asyncio.create_task(self._read_loop())
 
@@ -72,11 +115,10 @@ class DhanProvider:
                     break
                 if isinstance(raw, str):
                     continue
-                tick = self._parse_packet(raw)
-                if tick is not None:
+                for tick in self._parse_frame(raw):
                     await event_bus.publish("MARKET_TICK", tick)
         except Exception:
-            pass
+            logger.exception("Dhan feed read loop terminated unexpectedly")
 
     async def disconnect_feed(self) -> None:
         self._running = False
