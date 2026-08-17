@@ -109,3 +109,62 @@ def test_parse_frame_splits_multiplexed_packets():
     assert ticks[0].price == pytest.approx(25010.5)
     assert ticks[1].instrument == "99"
     assert ticks[1].price == pytest.approx(48000.25)
+
+
+# ---------------------- broker-neutral Tick.instrument ----------------------
+
+_SAMPLE_CSV = (
+    "SEM_EXM_EXCH_ID,SEM_SEGMENT,SEM_SMST_SECURITY_ID,SEM_TRADING_SYMBOL,"
+    "SEM_CUSTOM_SYMBOL,SEM_EXPIRY_DATE,SEM_STRIKE_PRICE,SEM_OPTION_TYPE,SEM_INSTRUMENT_NAME\n"
+    "NSE,I,13,NIFTY 50,NIFTY,,,,INDEX\n"
+    "NSE,I,25,NIFTY BANK,BANKNIFTY,,,,INDEX\n"
+    "BSE,I,51,SENSEX,SENSEX,,,,INDEX\n"
+)
+
+
+@pytest.mark.asyncio
+async def test_ltp_packet_publishes_upstox_shaped_symbolic_instrument(monkeypatch):
+    """Dhan's wire format carries a raw numeric security_id ("13"), but every
+    strategy engine matches Tick.instrument against Upstox's symbolic format
+    ("NSE_INDEX|Nifty 50"). The Tick published must use the symbolic form
+    regardless of which broker sourced it, or Dhan ticks land nowhere."""
+    from unittest.mock import AsyncMock
+
+    from backend.app.core.dhan_instrument_master import DhanInstrumentMaster
+    from backend.app.market_data.symbols import INDEX_INSTRUMENT_KEYS
+
+    master = DhanInstrumentMaster()
+    monkeypatch.setattr(master, "_fetch_csv_text", AsyncMock(return_value=_SAMPLE_CSV))
+    await master.ensure_loaded()
+    monkeypatch.setattr(dp_module, "dhan_instrument_master", master)
+
+    provider = DhanProvider()
+
+    nifty = provider._parse_packet(_ltp_packet(security_id=13, ltp=25010.5))
+    assert nifty.instrument == INDEX_INSTRUMENT_KEYS["NIFTY"] == "NSE_INDEX|Nifty 50"
+
+    sensex = provider._parse_packet(_ltp_packet(security_id=51, ltp=82000.0))
+    assert sensex.instrument == INDEX_INSTRUMENT_KEYS["SENSEX"] == "BSE_INDEX|SENSEX"
+
+    # An unknown security_id degrades to the raw id rather than dropping the tick.
+    assert provider._parse_packet(_ltp_packet(security_id=99, ltp=1.0)).instrument == "99"
+
+
+@pytest.mark.asyncio
+async def test_connect_feed_loads_the_instrument_master(monkeypatch):
+    """Nothing else in the application loads the instrument master; without
+    this, every security_id lookup raises and the feed subscribes to nothing."""
+    from unittest.mock import AsyncMock
+
+    from backend.app.core import dhan_auth
+
+    master = AsyncMock()
+    monkeypatch.setattr(dp_module, "dhan_instrument_master", master)
+    # No saved credentials -> connect_feed() returns before opening a socket,
+    # but the master must already have been loaded by then.
+    monkeypatch.setattr(dhan_auth, "load_token", lambda: None)
+    monkeypatch.setattr(dhan_auth, "load_client_id", lambda: None)
+
+    await DhanProvider().connect_feed()
+
+    master.ensure_loaded.assert_awaited_once()

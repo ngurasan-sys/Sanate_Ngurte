@@ -5,8 +5,10 @@ open and close Dhan's binary WebSocket feed, subscribing to the LTP ticker
 packet for the platform's tracked indices (NIFTY/BANKNIFTY/SENSEX).
 """
 
+import asyncio
 import json
 import logging
+import re
 import struct
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -15,8 +17,10 @@ import httpx
 
 from backend.app.core.dhan_instrument_master import dhan_instrument_master
 from backend.app.core.event_bus import event_bus
-from backend.app.market_data.market_quote import Quote
+from backend.app.market_data.market_quote import MarketQuoteLookupError, Quote
 from backend.app.market_data.models import Tick
+from backend.app.market_data.option_chain_client import OptionChainLookupError
+from backend.app.market_data.symbols import INDEX_INSTRUMENT_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +28,24 @@ DHAN_BASE_URL = "https://api.dhan.co/v2"
 DHAN_FEED_WS_URL = "wss://api-feed.dhan.co"
 LTP_FEED_RESPONSE_CODE = 2
 
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-class DhanProviderError(Exception):
-    """Raised when a real Dhan market-data request fails."""
+# Upstox's own query-parameter vocabulary, baked into MarketDataProvider's
+# default argument and hardcoded in every strategy engine. Dhan's API only
+# accepts a concrete YYYY-MM-DD expiry, so these are resolved against Dhan's
+# /optionchain/expirylist (sorted ascending, nearest first) before use.
+_RELATIVE_EXPIRY_INDEX = {"current_week": 0, "next_week": 1}
+
+
+class DhanProviderError(OptionChainLookupError, MarketQuoteLookupError):
+    """Raised when a real Dhan market-data request fails.
+
+    Deliberately multiple-inherits from the Upstox-era lookup errors that
+    existing strategy engines already catch by name, so a Dhan failure is
+    degraded the same way an Upstox failure is (including triggering the
+    documented current_week -> next_week fallbacks) without editing any
+    strategy file.
+    """
 
 
 def _headers(access_token: str) -> Dict[str, str]:
@@ -37,9 +56,23 @@ class DhanProvider:
     def __init__(self):
         self._ws = None
         self._running = False
+        self._read_task: Optional[asyncio.Task] = None
 
     def instrument_key_for_index(self, underlying: str) -> str:
         return dhan_instrument_master.security_id_for_index(underlying)
+
+    # ---------------------- live feed ----------------------
+
+    def _symbolic_instrument(self, security_id: int) -> str:
+        """Translate Dhan's raw numeric security_id into the SAME symbolic
+        instrument-key string Upstox's feed publishes (e.g. "NSE_INDEX|Nifty 50"),
+        so Tick.instrument is genuinely broker-neutral and the substring/
+        equality checks strategy engines already do against Upstox's format
+        keep working under Dhan. Falls back to the raw id if unknown."""
+        underlying = dhan_instrument_master.underlying_for_security_id(str(security_id))
+        if underlying is None:
+            return str(security_id)
+        return INDEX_INSTRUMENT_KEYS.get(underlying, str(security_id))
 
     def _parse_packet(self, raw: bytes) -> Optional[Tick]:
         # Dhan's binary feed is little-endian (per DhanHQ v2 docs: "The data
@@ -52,7 +85,10 @@ class DhanProvider:
             return None
         ltp, _trade_time = struct.unpack("<fI", raw[8:16])
         from datetime import datetime
-        return Tick(instrument=str(security_id), price=float(ltp), volume=0.0, timestamp=datetime.now(), is_trade=True)
+        return Tick(
+            instrument=self._symbolic_instrument(security_id),
+            price=float(ltp), volume=0.0, timestamp=datetime.now(), is_trade=True,
+        )
 
     def _parse_frame(self, raw: bytes) -> List[Tick]:
         """A single WebSocket binary frame from Dhan can multiplex several
@@ -77,6 +113,11 @@ class DhanProvider:
 
     async def connect_feed(self) -> None:
         import websockets  # only imported here so the module stays importable without the dependency installed, matching upstox_v3.py's UPSTOX_AVAILABLE pattern
+
+        # The instrument master is the only source of Dhan security_ids, and
+        # nothing else loads it. Broker activation and app startup both route
+        # through here, so this is the load point for the whole Dhan surface.
+        await dhan_instrument_master.ensure_loaded()
 
         from backend.app.core import dhan_auth
         token = dhan_auth.load_token()
@@ -105,8 +146,7 @@ class DhanProvider:
             }
             await self._ws.send(json.dumps(subscribe_message))
 
-        import asyncio
-        asyncio.create_task(self._read_loop())
+        self._read_task = asyncio.create_task(self._read_loop())
 
     async def _read_loop(self) -> None:
         try:
@@ -117,23 +157,83 @@ class DhanProvider:
                     continue
                 for tick in self._parse_frame(raw):
                     await event_bus.publish("MARKET_TICK", tick)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             logger.exception("Dhan feed read loop terminated unexpectedly")
 
     async def disconnect_feed(self) -> None:
         self._running = False
+        # Cancel the reader before closing the socket, otherwise a broker
+        # switch leaves a dangling task that logs a spurious exception when
+        # the socket it is iterating disappears underneath it.
+        task, self._read_task = self._read_task, None
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
         if self._ws is not None:
             await self._ws.close()
             self._ws = None
 
+    # ---------------------- option chain ----------------------
+
+    async def _fetch_expiry_list(self, index_key: str, access_token: str) -> List[str]:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{DHAN_BASE_URL}/optionchain/expirylist",
+                    json={"UnderlyingScrip": int(index_key), "UnderlyingSeg": "IDX_I"},
+                    headers=_headers(access_token),
+                )
+        except httpx.HTTPError as exc:
+            raise DhanProviderError(f"Dhan expiry-list request failed: {exc}")
+
+        if response.status_code != 200:
+            raise DhanProviderError(
+                f"Dhan expiry-list fetch failed ({response.status_code}): {response.text}"
+            )
+        expiries = response.json().get("data", []) or []
+        if not expiries:
+            raise DhanProviderError(
+                f"Dhan returned no expiries for underlying security_id={index_key!r}."
+            )
+        return expiries
+
+    async def _resolve_expiry_date(self, index_key: str, access_token: str, expiry_date: str) -> str:
+        """Strategy code speaks Upstox's relative-expiry vocabulary
+        ("current_week"/"next_week"); Dhan's API only accepts a concrete
+        YYYY-MM-DD. Resolve via Dhan's own /optionchain/expirylist, which
+        returns dates sorted ascending (nearest first)."""
+        if _ISO_DATE_RE.match(expiry_date or ""):
+            return expiry_date
+        if expiry_date not in _RELATIVE_EXPIRY_INDEX:
+            raise DhanProviderError(
+                f"Unsupported expiry specifier {expiry_date!r} — expected YYYY-MM-DD, "
+                f"'current_week' or 'next_week'."
+            )
+        index = _RELATIVE_EXPIRY_INDEX[expiry_date]
+        expiries = await self._fetch_expiry_list(index_key, access_token)
+        if index >= len(expiries):
+            raise DhanProviderError(
+                f"Dhan has no expiry at position {index} for {expiry_date!r} "
+                f"(underlying security_id={index_key!r}, available={expiries})."
+            )
+        return expiries[index]
+
     async def fetch_option_chain(
         self, index_key: str, access_token: str, expiry_date: str = "current_week",
     ) -> List[Dict[str, Any]]:
+        await dhan_instrument_master.ensure_loaded()
+        resolved_expiry = await self._resolve_expiry_date(index_key, access_token, expiry_date)
+
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{DHAN_BASE_URL}/optionchain",
-                    json={"UnderlyingScrip": int(index_key), "UnderlyingSeg": "IDX_I", "Expiry": expiry_date},
+                    json={"UnderlyingScrip": int(index_key), "UnderlyingSeg": "IDX_I", "Expiry": resolved_expiry},
                     headers=_headers(access_token),
                 )
         except httpx.HTTPError as exc:
@@ -145,12 +245,22 @@ class DhanProvider:
         data = response.json().get("data", {})
         spot = data.get("last_price")
         oc = data.get("oc", {})
+        if not oc:
+            # Upstox's option_chain_client raises on an empty chain, and
+            # several engines rely on catching that to trigger their
+            # current_week -> next_week fallback. Returning [] here would
+            # break the fallback and hand callers an empty list they then
+            # index into.
+            raise DhanProviderError(
+                f"Dhan option chain response had no strikes for underlying "
+                f"security_id={index_key!r} expiry={resolved_expiry!r}."
+            )
         rows = []
         for strike_str, legs in oc.items():
             strike = float(strike_str)
             row: Dict[str, Any] = {
                 "strike_price": strike,
-                "expiry": expiry_date,
+                "expiry": resolved_expiry,
                 "underlying_spot_price": spot,
             }
             for leg_key, canonical_key in (("ce", "call_options"), ("pe", "put_options")):
@@ -161,18 +271,14 @@ class DhanProvider:
                 try:
                     underlying_name = _underlying_for_index_key(index_key)
                     security_id = dhan_instrument_master.security_id_for_option(
-                        # index_key is Dhan's underlying security_id, not the underlying
-                        # name — callers pass the underlying name separately via the
-                        # instrument master's own state; this call resolves by strike
-                        # under the assumption the master was loaded for this underlying.
-                        underlying_name, expiry_date, strike, option_type,
+                        underlying_name, resolved_expiry, strike, option_type,
                     )
                 except Exception:
                     security_id = None
                     logger.warning(
                         "Dhan security_id resolution failed for underlying_index_key=%s "
                         "expiry=%s strike=%s option_type=%s; instrument_key will be None.",
-                        index_key, expiry_date, strike, option_type,
+                        index_key, resolved_expiry, strike, option_type,
                     )
                 greeks = leg.get("greeks", {})
                 row[canonical_key] = {
@@ -195,12 +301,23 @@ class DhanProvider:
             rows.append(row)
         return rows
 
+    # ---------------------- quotes / candles ----------------------
+
+    def _segment_for_security_id(self, instrument_key: str) -> str:
+        """SENSEX and its options live in BSE, not NSE — ask the instrument
+        master for the real exchange instead of hardcoding NSE_FNO."""
+        if dhan_instrument_master.is_index_security_id(instrument_key):
+            return "IDX_I"
+        exchange = dhan_instrument_master.exchange_for_security_id(instrument_key)
+        return f"{exchange}_FNO" if exchange else "NSE_FNO"
+
     async def fetch_quote(self, instrument_key: str, access_token: str) -> Quote:
+        segment = self._segment_for_security_id(instrument_key)
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{DHAN_BASE_URL}/marketfeed/quote",
-                    json={"NSE_FNO": [int(instrument_key)]},
+                    json={segment: [int(instrument_key)]},
                     headers=_headers(access_token),
                 )
         except httpx.HTTPError as exc:
@@ -261,10 +378,14 @@ def _underlying_for_index_key(index_key: str) -> str:
     underlying index; option-leg resolution needs the underlying's NAME
     (e.g. "NIFTY"), not its security_id. Delegates to the instrument
     master's own cached mapping rather than re-fetching anything."""
-    for underlying in ("NIFTY", "BANKNIFTY", "SENSEX"):
+    underlying = dhan_instrument_master.underlying_for_security_id(index_key)
+    if underlying is not None:
+        return underlying
+    # Fallback for a master mocked at the older (id-only) API surface.
+    for candidate in ("NIFTY", "BANKNIFTY", "SENSEX"):
         try:
-            if dhan_instrument_master.security_id_for_index(underlying) == index_key:
-                return underlying
+            if dhan_instrument_master.security_id_for_index(candidate) == index_key:
+                return candidate
         except Exception:
             continue
     raise DhanProviderError(f"Could not resolve underlying name for Dhan security_id {index_key!r}.")

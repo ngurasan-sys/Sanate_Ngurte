@@ -147,3 +147,53 @@ async def test_client_error_status_is_still_rejected(monkeypatch):
     result = await DhanExecutionAdapter().place_order(_req(), ExecutionMode.LIVE)
 
     assert result.status == "REJECTED"
+
+
+# ---------------------- exchange segment is resolved, not hardcoded NSE ----------------------
+
+
+async def _place_and_capture_segment(monkeypatch, instrument_token):
+    monkeypatch.setattr(da_module.dhan_auth, "load_token", lambda: "live-token")
+    monkeypatch.setattr(da_module.dhan_auth, "load_client_id", lambda: "CLIENT123")
+    captured = {}
+
+    def handler(request):
+        import json
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json={"orderId": "DHAN789", "orderStatus": "PENDING"})
+
+    monkeypatch.setattr(da_module.httpx, "AsyncClient", lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(handler)))
+    await DhanExecutionAdapter().place_order(_req(instrument_token=instrument_token), ExecutionMode.LIVE)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_exchange_segment_is_resolved_from_the_instrument_master(monkeypatch):
+    """SENSEX options live in BSE_FNO — hardcoding NSE_FNO would have Dhan
+    reject (or worse, misroute) every SENSEX leg."""
+    from unittest.mock import AsyncMock
+
+    from backend.app.core.dhan_instrument_master import DhanInstrumentMaster
+
+    csv_text = (
+        "SEM_EXM_EXCH_ID,SEM_SEGMENT,SEM_SMST_SECURITY_ID,SEM_TRADING_SYMBOL,"
+        "SEM_CUSTOM_SYMBOL,SEM_EXPIRY_DATE,SEM_STRIKE_PRICE,SEM_OPTION_TYPE,SEM_INSTRUMENT_NAME\n"
+        "NSE,D,1001,NIFTY-Oct2026-25000-CE,NIFTY 25000 CE,2026-10-30,25000,CE,OPTIDX\n"
+        "BSE,D,7001,SENSEX-Oct2026-82000-CE,SENSEX 82000 CE,2026-10-30,82000,CE,OPTIDX\n"
+    )
+    master = DhanInstrumentMaster()
+    monkeypatch.setattr(master, "_fetch_csv_text", AsyncMock(return_value=csv_text))
+    await master.ensure_loaded()
+    monkeypatch.setattr(da_module, "dhan_instrument_master", master)
+
+    assert (await _place_and_capture_segment(monkeypatch, "1001"))["exchangeSegment"] == "NSE_FNO"
+    assert (await _place_and_capture_segment(monkeypatch, "7001"))["exchangeSegment"] == "BSE_FNO"
+
+
+@pytest.mark.asyncio
+async def test_exchange_segment_falls_back_to_nse_when_master_is_unloaded(monkeypatch):
+    from backend.app.core.dhan_instrument_master import DhanInstrumentMaster
+
+    monkeypatch.setattr(da_module, "dhan_instrument_master", DhanInstrumentMaster())
+
+    assert (await _place_and_capture_segment(monkeypatch, "1001"))["exchangeSegment"] == "NSE_FNO"

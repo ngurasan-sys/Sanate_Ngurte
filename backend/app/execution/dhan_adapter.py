@@ -8,6 +8,7 @@ import logging
 import httpx
 
 from backend.app.core import dhan_auth
+from backend.app.core.dhan_instrument_master import dhan_instrument_master
 from backend.app.execution.order_gateway import ExecutionMode, OrderRequest, OrderResult
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,26 @@ DHAN_ORDER_URL = "https://api.dhan.co/v2/orders"
 
 PRODUCT_MAP = {"I": "INTRADAY", "D": "CNC", "MTF": "MTF"}
 ORDER_TYPE_MAP = {"MARKET": "MARKET", "LIMIT": "LIMIT", "SL": "STOP_LOSS", "SL-M": "STOP_LOSS_MARKET"}
+
+
+DEFAULT_EXCHANGE_SEGMENT = "NSE_FNO"
+
+
+def _exchange_segment_for(security_id: str) -> str:
+    """SENSEX options are BSE_FNO, not NSE_FNO — resolve the real exchange
+    from the instrument master rather than hardcoding NSE. The master is
+    loaded at broker activation (DhanProvider.connect_feed), so by the time
+    orders flow it is populated; if it somehow isn't, fall back to NSE_FNO
+    (the previous behaviour, correct for NIFTY/BANKNIFTY) rather than
+    blocking a live order on a multi-megabyte CSV download."""
+    exchange = dhan_instrument_master.exchange_for_security_id(security_id)
+    if not exchange:
+        logger.warning(
+            "Unknown Dhan exchange for security_id=%s; defaulting to %s.",
+            security_id, DEFAULT_EXCHANGE_SEGMENT,
+        )
+        return DEFAULT_EXCHANGE_SEGMENT
+    return f"{exchange}_FNO"
 
 
 class DhanExecutionAdapter:
@@ -37,7 +58,7 @@ class DhanExecutionAdapter:
         body = {
             "dhanClientId": client_id,
             "transactionType": request.transaction_type,
-            "exchangeSegment": "NSE_FNO",
+            "exchangeSegment": _exchange_segment_for(request.instrument_token),
             "productType": PRODUCT_MAP.get(request.product, "INTRADAY"),
             "orderType": ORDER_TYPE_MAP.get(request.order_type, "MARKET"),
             "validity": request.validity,

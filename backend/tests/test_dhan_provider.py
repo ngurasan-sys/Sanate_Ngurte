@@ -1,6 +1,6 @@
 # backend/tests/test_dhan_provider.py
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -19,6 +19,11 @@ _RealAsyncClient = httpx.AsyncClient
 def provider(monkeypatch):
     p = DhanProvider()
     master = MagicMock()
+    # ensure_loaded() is awaited by fetch_option_chain()/connect_feed() now.
+    master.ensure_loaded = AsyncMock()
+    master.underlying_for_security_id.side_effect = lambda sid: {"13": "NIFTY"}.get(str(sid))
+    master.is_index_security_id.side_effect = lambda sid: str(sid) == "13"
+    master.exchange_for_security_id.side_effect = lambda sid: {"13": "NSE", "1001": "NSE"}.get(str(sid))
     master.security_id_for_index.return_value = "13"
     master.security_id_for_option.side_effect = lambda underlying, expiry, strike, opt_type: {
         ("NIFTY", "2026-10-30", 25000.0, "CE"): "1001",
@@ -133,3 +138,131 @@ async def test_fetch_historical_candles_translates_to_canonical_rows(provider, m
     assert rows[0]["close"] == 105.0
     assert rows[0]["volume"] == 1000
     assert "timestamp" in rows[0]
+
+
+# ---------------------- expiry resolution (Upstox vocabulary -> real Dhan date) ----------------------
+
+
+def _expiry_and_chain_handler(recorded, expiries=("2026-10-30", "2026-11-06")):
+    def handler(request):
+        import json as _json
+        body = _json.loads(request.content.decode())
+        recorded.append((request.url.path, body))
+        if request.url.path.endswith("/optionchain/expirylist"):
+            return httpx.Response(200, json={"status": "success", "data": list(expiries)})
+        return httpx.Response(200, json={
+            "data": {"last_price": 25010.5, "oc": {"25000.000000": {
+                "ce": {"last_price": 120.5, "oi": 5, "volume": 1, "top_bid_price": 119.0,
+                       "top_ask_price": 121.0, "implied_volatility": 15.2, "greeks": {}},
+            }}},
+        })
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_current_week_resolves_to_first_dhan_expiry(provider, monkeypatch):
+    recorded = []
+    monkeypatch.setattr(dp_module.httpx, "AsyncClient",
+                        lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(_expiry_and_chain_handler(recorded))))
+
+    chain = await provider.fetch_option_chain("13", "tok", "current_week")
+
+    paths = [p for p, _ in recorded]
+    assert paths == ["/v2/optionchain/expirylist", "/v2/optionchain"]
+    # The expiry-list request identifies the underlying correctly...
+    assert recorded[0][1] == {"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I"}
+    # ...and the resolved real date (not "current_week") is what Dhan is asked for.
+    assert recorded[1][1]["Expiry"] == "2026-10-30"
+    assert chain[0]["expiry"] == "2026-10-30"
+    # ...and the same real date is what the security_id lookup used.
+    dp_module.dhan_instrument_master.security_id_for_option.assert_called_with(
+        "NIFTY", "2026-10-30", 25000.0, "CE",
+    )
+    assert chain[0]["call_options"]["instrument_key"] == "1001"
+
+
+@pytest.mark.asyncio
+async def test_next_week_resolves_to_second_dhan_expiry(provider, monkeypatch):
+    recorded = []
+    monkeypatch.setattr(dp_module.httpx, "AsyncClient",
+                        lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(_expiry_and_chain_handler(recorded))))
+
+    resolved = await provider._resolve_expiry_date("13", "tok", "next_week")
+
+    assert resolved == "2026-11-06"
+
+
+@pytest.mark.asyncio
+async def test_iso_expiry_is_passed_through_without_an_expirylist_call(provider, monkeypatch):
+    recorded = []
+    monkeypatch.setattr(dp_module.httpx, "AsyncClient",
+                        lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(_expiry_and_chain_handler(recorded))))
+
+    await provider.fetch_option_chain("13", "tok", "2026-10-30")
+
+    assert [p for p, _ in recorded] == ["/v2/optionchain"]
+
+
+@pytest.mark.asyncio
+async def test_next_week_with_only_one_expiry_raises(provider, monkeypatch):
+    recorded = []
+    monkeypatch.setattr(dp_module.httpx, "AsyncClient",
+                        lambda *a, **kw: _RealAsyncClient(
+                            transport=httpx.MockTransport(_expiry_and_chain_handler(recorded, expiries=("2026-10-30",)))))
+
+    with pytest.raises(DhanProviderError):
+        await provider._resolve_expiry_date("13", "tok", "next_week")
+
+
+# ---------------------- empty chain raises (fallback compatibility) ----------------------
+
+
+@pytest.mark.asyncio
+async def test_empty_option_chain_raises_instead_of_returning_empty_list(provider, monkeypatch):
+    def handler(request):
+        return httpx.Response(200, json={"data": {"last_price": 25010.5, "oc": {}}})
+    monkeypatch.setattr(dp_module.httpx, "AsyncClient", lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(handler)))
+
+    with pytest.raises(DhanProviderError):
+        await provider.fetch_option_chain("13", "tok", "2026-10-30")
+
+
+# ---------------------- exception compatibility with Upstox-shaped except-clauses ----------------------
+
+
+def test_dhan_errors_are_catchable_by_existing_strategy_except_clauses():
+    from backend.app.core.dhan_instrument_master import DhanInstrumentLookupError
+    from backend.app.market_data.market_quote import MarketQuoteLookupError
+    from backend.app.market_data.option_chain_client import OptionChainLookupError
+
+    assert issubclass(DhanProviderError, OptionChainLookupError)
+    assert issubclass(DhanProviderError, MarketQuoteLookupError)
+    assert issubclass(DhanInstrumentLookupError, KeyError)
+    assert issubclass(DhanInstrumentLookupError, OptionChainLookupError)
+
+
+def test_dhan_instrument_lookup_error_message_is_not_repr_quoted():
+    from backend.app.core.dhan_instrument_master import DhanInstrumentLookupError
+    assert str(DhanInstrumentLookupError("no security_id for NIFTY")) == "no security_id for NIFTY"
+
+
+# ---------------------- exchange segments (SENSEX is BSE) ----------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_quote_uses_bse_segment_for_a_bse_instrument(provider, monkeypatch):
+    recorded = {}
+
+    def handler(request):
+        import json as _json
+        recorded.update(_json.loads(request.content.decode()))
+        return httpx.Response(200, json={"data": {"BSE_FNO": {"7001": {"last_price": 10.0, "volume": 1, "depth": {}}}}})
+
+    monkeypatch.setattr(dp_module.httpx, "AsyncClient", lambda *a, **kw: _RealAsyncClient(transport=httpx.MockTransport(handler)))
+    dp_module.dhan_instrument_master.is_index_security_id.side_effect = lambda sid: False
+    dp_module.dhan_instrument_master.exchange_for_security_id.side_effect = lambda sid: "BSE"
+
+    quote = await provider.fetch_quote("7001", "tok")
+
+    assert list(recorded.keys()) == ["BSE_FNO"]
+    assert quote.last_price == 10.0
