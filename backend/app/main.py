@@ -51,6 +51,9 @@ from backend.app.strategies.manual_trading import manual_trading_engine
 from backend.app.strategies.cas_dislocation.engine import cas_dislocation_engine
 from backend.app.strategies.order_flow_absorption.engine import ofao_engine
 from backend.app.engines.market_breadth_engine import market_breadth_engine
+from backend.app.market_data.processor import TickProcessor
+from backend.app.levels.engine import LevelEngine
+from backend.app.api.endpoints.levels import set_level_engine
 from backend.app.market_data.upstox_provider import upstox_provider
 from backend.app.execution.upstox_adapter import upstox_execution_adapter
 from backend.app.core import upstox_auth
@@ -139,6 +142,20 @@ async def lifespan(app: FastAPI):
     cas_dislocation_engine.start()
     ofao_engine.start()
     market_breadth_engine.start()
+
+    tick_processor = TickProcessor()
+    level_engine = LevelEngine()
+    set_level_engine(level_engine)
+    level_engine.start()
+
+    async def _feed_candle_aggregators(tick) -> None:
+        # NOT tick_processor.process(tick) — that method itself publishes
+        # MARKET_TICK, and this callback IS the MARKET_TICK subscriber;
+        # calling it here would re-publish and re-trigger itself forever.
+        for aggregator in tick_processor.aggregators:
+            await aggregator.process_tick(tick)
+
+    event_bus.subscribe("MARKET_TICK", _feed_candle_aggregators)
 
     # If no broker has been explicitly activated yet but Upstox already
     # has a saved token, activate it automatically — this preserves
