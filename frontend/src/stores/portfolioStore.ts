@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Position, Order } from '../mock/interfaces';
-import { mockPositions, mockOrders } from '../mock/data';
 
 interface PortfolioState {
   positions: Position[];
@@ -14,10 +13,10 @@ interface PortfolioState {
 }
 
 export const usePortfolioStore = create<PortfolioState>((set) => ({
-  positions: mockPositions,
-  orders: mockOrders,
-  totalPnl: 18450.00,
-  todayPnl: 6240.00,
+  positions: [],
+  orders: [],
+  totalPnl: 0,
+  todayPnl: 0,
   setPositions: (positions) => set({ positions }),
   setOrders: (orders) => set({ orders }),
   updatePositionPrice: (id, newLtp) =>

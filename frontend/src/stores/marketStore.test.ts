@@ -66,17 +66,19 @@ describe('useMarketStore', () => {
       const newState = useMarketStore.getState();
       const nifty = newState.indices.NIFTY;
 
-      expect(nifty.spot).toBe(26000);
-      expect(nifty.change).toBe(1500);
-      expect(nifty.changePercent).toBe(6.1);
+      expect(nifty).toBeDefined();
+      if (nifty) {
+        expect(nifty.spot).toBe(26000);
+        expect(nifty.change).toBe(1500);
+        expect(nifty.changePercent).toBe(6.1);
 
-      // Other fields should remain unchanged
-      expect(nifty.trend).toBe(mockMarketIndices.NIFTY.trend);
+        // Other fields should remain unchanged
+        expect(nifty.trend).toBe(mockMarketIndices.NIFTY.trend);
+      }
 
       // Other indices should remain unchanged
-      expect(newState.indices.SENSEX).toEqual(
-        mockMarketIndices.SENSEX
-      );
+      const sensex = newState.indices.SENSEX;
+      expect(sensex).toEqual(mockMarketIndices.SENSEX);
     });
 
     it('should maintain immutability for untouched symbols', () => {

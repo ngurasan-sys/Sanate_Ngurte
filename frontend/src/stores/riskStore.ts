@@ -1,22 +1,24 @@
 import { create } from 'zustand';
 import type { RiskSummaryData } from '../mock/interfaces';
-import { mockRiskSummary } from '../mock/data';
 
 interface RiskState {
-  riskSummary: RiskSummaryData;
+  riskSummary: RiskSummaryData | null;
   setRiskSummary: (riskSummary: RiskSummaryData) => void;
   updateRiskMargin: (availableMargin: number, marginUsed: number) => void;
 }
 
 export const useRiskStore = create<RiskState>((set) => ({
-  riskSummary: mockRiskSummary,
+  riskSummary: null,
   setRiskSummary: (riskSummary) => set({ riskSummary }),
   updateRiskMargin: (availableMargin, marginUsed) =>
-    set((state) => ({
-      riskSummary: {
-        ...state.riskSummary,
-        availableMargin,
-        marginUsed,
-      },
-    })),
+    set((state) => {
+      if (!state.riskSummary) return {};
+      return {
+        riskSummary: {
+          ...state.riskSummary,
+          availableMargin,
+          marginUsed,
+        },
+      };
+    }),
 }));

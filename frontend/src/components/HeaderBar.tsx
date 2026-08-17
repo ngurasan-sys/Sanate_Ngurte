@@ -23,40 +23,44 @@ export const HeaderBar: React.FC = () => {
       {/* Index Tickers */}
       <div className="flex items-center gap-6">
         {/* NIFTY Ticker */}
-        <div className="flex items-center gap-2">
-          <span className="text-zinc-500 font-semibold tracking-wider">NIFTY</span>
-          <span className="font-mono font-medium text-zinc-200 tabular-nums">
-            {nifty.spot.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </span>
-          <span
-            className={`font-mono text-[10px] tabular-nums ${
-              nifty.change >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-          >
-            {nifty.change >= 0 ? '+' : ''}
-            {nifty.change.toFixed(2)} ({nifty.changePercent >= 0 ? '+' : ''}
-            {nifty.changePercent.toFixed(2)}%)
-          </span>
-        </div>
+        {nifty && (
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 font-semibold tracking-wider">NIFTY</span>
+            <span className="font-mono font-medium text-zinc-200 tabular-nums">
+              {nifty.spot?.toLocaleString('en-IN', { minimumFractionDigits: 2 }) || '—'}
+            </span>
+            <span
+              className={`font-mono text-[10px] tabular-nums ${
+                (nifty.change || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+              }`}
+            >
+              {(nifty.change || 0) >= 0 ? '+' : ''}
+              {(nifty.change || 0).toFixed(2)} ({(nifty.changePercent || 0) >= 0 ? '+' : ''}
+              {(nifty.changePercent || 0).toFixed(2)}%)
+            </span>
+          </div>
+        )}
 
-        <div className="w-[1px] h-3 bg-zinc-800" />
+        {nifty && sensex && <div className="w-[1px] h-3 bg-zinc-800" />}
 
         {/* SENSEX Ticker */}
-        <div className="flex items-center gap-2">
-          <span className="text-zinc-500 font-semibold tracking-wider">SENSEX</span>
-          <span className="font-mono font-medium text-zinc-200 tabular-nums">
-            {sensex.spot.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </span>
-          <span
-            className={`font-mono text-[10px] tabular-nums ${
-              sensex.change >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-          >
-            {sensex.change >= 0 ? '+' : ''}
-            {sensex.change.toFixed(2)} ({sensex.changePercent >= 0 ? '+' : ''}
-            {sensex.changePercent.toFixed(2)}%)
-          </span>
-        </div>
+        {sensex && (
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 font-semibold tracking-wider">SENSEX</span>
+            <span className="font-mono font-medium text-zinc-200 tabular-nums">
+              {sensex.spot?.toLocaleString('en-IN', { minimumFractionDigits: 2 }) || '—'}
+            </span>
+            <span
+              className={`font-mono text-[10px] tabular-nums ${
+                (sensex.change || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+              }`}
+            >
+              {(sensex.change || 0) >= 0 ? '+' : ''}
+              {(sensex.change || 0).toFixed(2)} ({(sensex.changePercent || 0) >= 0 ? '+' : ''}
+              {(sensex.changePercent || 0).toFixed(2)}%)
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Connection & Latency Badges */}

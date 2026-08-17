@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { BrokerageStatus } from '../mock/interfaces';
-import { mockBrokerageStatus } from '../mock/data';
 
 interface SystemState {
   brokerageStatus: BrokerageStatus;
@@ -12,8 +11,22 @@ interface SystemState {
   disconnectBroker: () => void;
 }
 
+const DEFAULT_BROKERAGE_STATUS: BrokerageStatus = {
+  isConnected: false,
+  wsStatus: 'DISCONNECTED',
+  wsLatency: 0,
+  brokerName: 'Upstox',
+  marketStatus: 'MARKET CLOSED',
+  account: {
+    clientId: '',
+    name: 'Upstox',
+    authStatus: 'AUTHENTICATION REQUIRED',
+  },
+  tradingStatus: 'SAFE HALT',
+};
+
 export const useSystemStore = create<SystemState>((set) => ({
-  brokerageStatus: mockBrokerageStatus,
+  brokerageStatus: DEFAULT_BROKERAGE_STATUS,
   setBrokerageStatus: (brokerageStatus) => set({ brokerageStatus }),
   setWsStatus: (wsStatus) =>
     set((state) => ({

@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Strategy } from '../mock/interfaces';
-import { mockStrategies } from '../mock/data';
 
 interface StrategyState {
   strategies: Strategy[];
@@ -9,7 +8,7 @@ interface StrategyState {
 }
 
 export const useStrategyStore = create<StrategyState>((set) => ({
-  strategies: mockStrategies,
+  strategies: [],
   setStrategies: (strategies) => set({ strategies }),
   updateStrategyPnl: (id, pnl) =>
     set((state) => ({

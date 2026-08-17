@@ -4,7 +4,10 @@ import { useUiStore } from './stores/uiStore';
 import { useMarketStore } from './stores/marketStore';
 import { usePortfolioStore } from './stores/portfolioStore';
 import { useLiveFeedSimulator } from './stores/useLiveFeedSimulator';
-import { mockOptionChains } from './mock/data';
+import { useLiveMarketIndices } from './hooks/useLiveMarketIndices';
+import { useLiveDecisions } from './hooks/useLiveDecisions';
+import { useLiveRisk } from './hooks/useLiveRisk';
+import { useLiveStrategies } from './hooks/useLiveStrategies';
 
 // Reusable / specific view panels
 import MetricCard from './components/MetricCard';
@@ -49,6 +52,18 @@ export const App: React.FC = () => {
   // Start simulated WebSocket/LTP stream updates
   useLiveFeedSimulator();
 
+  // Fetch live market indices (NIFTY, SENSEX, etc.)
+  useLiveMarketIndices();
+
+  // Fetch live decisions
+  useLiveDecisions();
+
+  // Fetch live risk summary
+  useLiveRisk();
+
+  // Fetch live strategies
+  useLiveStrategies();
+
   const { activePage } = useUiStore();
   const { indices } = useMarketStore();
   const { totalPnl, todayPnl, positions } = usePortfolioStore();
@@ -63,12 +78,22 @@ export const App: React.FC = () => {
   const sensex = indices.SENSEX;
 
   // Active NIFTY chain helper for live log updates
-  const niftyChains = mockOptionChains['NIFTY'];
-  const activeChain = niftyChains && niftyChains[0];
+  // TODO: Wire to optionStore.optionChains once backend provides option chain data
+  const activeChain = undefined;
 
   // Render a generic summary block helper
   const renderIndexDetailCard = (symbol: 'NIFTY' | 'SENSEX') => {
     const data = indices[symbol];
+    if (!data) {
+      return (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="font-sans font-bold text-sm tracking-wider uppercase text-zinc-100">{symbol} Summary</span>
+          </div>
+          <div className="text-zinc-400 font-mono text-xs">NO DATA</div>
+        </div>
+      );
+    }
     return (
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -78,27 +103,27 @@ export const App: React.FC = () => {
         <div className="grid grid-cols-2 gap-4 font-mono text-xs text-zinc-400">
           <div>
             <span className="text-zinc-500 block">Spot:</span>
-            <span className="text-sm font-semibold text-zinc-100">{data.spot.toLocaleString()}</span>
+            <span className="text-sm font-semibold text-zinc-100">{data.spot?.toLocaleString() || 'N/A'}</span>
           </div>
           <div>
             <span className="text-zinc-500 block">VWAP:</span>
-            <span className="text-sm font-semibold text-zinc-100">{data.vwap.toLocaleString()}</span>
+            <span className="text-sm font-semibold text-zinc-100">{data.vwap?.toLocaleString() || 'N/A'}</span>
           </div>
           <div>
             <span className="text-zinc-500 block">Support:</span>
-            <span className="text-sm font-semibold text-emerald-400">{data.support.toLocaleString()}</span>
+            <span className="text-sm font-semibold text-emerald-400">{data.support?.toLocaleString() || 'N/A'}</span>
           </div>
           <div>
             <span className="text-zinc-500 block">Resistance:</span>
-            <span className="text-sm font-semibold text-rose-400">{data.resistance.toLocaleString()}</span>
+            <span className="text-sm font-semibold text-rose-400">{data.resistance?.toLocaleString() || 'N/A'}</span>
           </div>
           <div>
             <span className="text-zinc-500 block">IV %:</span>
-            <span className="text-sm font-semibold text-zinc-100">{data.iv}%</span>
+            <span className="text-sm font-semibold text-zinc-100">{data.iv || 'N/A'}%</span>
           </div>
           <div>
             <span className="text-zinc-500 block">Expected Move:</span>
-            <span className="text-sm font-semibold text-zinc-100">±{data.expectedMove}</span>
+            <span className="text-sm font-semibold text-zinc-100">±{data.expectedMove || 'N/A'}</span>
           </div>
         </div>
       </div>
@@ -504,14 +529,18 @@ export const App: React.FC = () => {
                 <h4 className="text-zinc-100 font-sans font-bold text-xs uppercase tracking-wider">Normalization Streams logs</h4>
               </div>
               <div className="space-y-2 font-mono text-xs text-zinc-400">
+                {nifty && (
+                  <div className="p-3 bg-zinc-950/40 border border-zinc-850 rounded-lg">
+                    <span className="text-zinc-500">14:29:58 -</span> Normalizer mapped tick: NIFTY Spot: <span className="text-zinc-100">{nifty.spot?.toFixed(2) || 'N/A'}</span>, Change: <span className={(nifty.change || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{nifty.change?.toFixed(2) || '0.00'}</span>
+                  </div>
+                )}
+                {sensex && (
+                  <div className="p-3 bg-zinc-950/40 border border-zinc-850 rounded-lg">
+                    <span className="text-zinc-500">14:29:58 -</span> Normalizer mapped tick: SENSEX Spot: <span className="text-zinc-100">{sensex.spot?.toFixed(2) || 'N/A'}</span>, Change: <span className={(sensex.change || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{sensex.change?.toFixed(2) || '0.00'}</span>
+                  </div>
+                )}
                 <div className="p-3 bg-zinc-950/40 border border-zinc-850 rounded-lg">
-                  <span className="text-zinc-500">14:29:58 -</span> Normalizer mapped tick: NIFTY Spot: <span className="text-zinc-100">{nifty.spot.toFixed(2)}</span>, Change: <span className={nifty.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{nifty.change.toFixed(2)}</span>
-                </div>
-                <div className="p-3 bg-zinc-950/40 border border-zinc-850 rounded-lg">
-                  <span className="text-zinc-500">14:29:58 -</span> Normalizer mapped tick: SENSEX Spot: <span className="text-zinc-100">{sensex.spot.toFixed(2)}</span>, Change: <span className={sensex.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{sensex.change.toFixed(2)}</span>
-                </div>
-                <div className="p-3 bg-zinc-950/40 border border-zinc-850 rounded-lg">
-                  <span className="text-zinc-500">14:29:58 -</span> Option normalizer snapshot: CE strike 24500 ltp updated to <span className="text-emerald-400">₹{activeChain?.strikes.find((s) => s.strike === 24500)?.ce.ltp}</span>
+                  <span className="text-zinc-500">14:29:58 -</span> Option normalizer snapshot: CE strike 24500 ltp updated to <span className="text-emerald-400">₹{activeChain ? 'OPTION CHAIN DATA UNAVAILABLE' : 'OPTION CHAIN DATA UNAVAILABLE'}</span>
                 </div>
               </div>
             </div>

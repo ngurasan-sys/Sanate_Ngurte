@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useOFAOStore, OFAOSnapshot } from './useOFAOStore';
+import { useOFAOStore } from './useOFAOStore';
+import type { OFAOSnapshot } from './useOFAOStore';
 
 const snapshot = (overrides: Partial<OFAOSnapshot> = {}): OFAOSnapshot => ({
   instrument_key: 'NIFTY FUT', underlying: 'NIFTY', timestamp: '2024-10-01T10:00:00Z',

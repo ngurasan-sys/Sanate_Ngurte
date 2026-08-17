@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { OptionChainData, SpotTrendingOIItem, FutureTrendingOIItem } from '../mock/interfaces';
-import { mockOptionChains } from '../mock/data';
 
 interface OptionState {
   wsConnected: boolean;
@@ -20,7 +19,7 @@ let ws: WebSocket | null = null;
 
 export const useOptionStore = create<OptionState>((set, get) => ({
   wsConnected: false,
-  optionChains: mockOptionChains,
+  optionChains: { NIFTY: [], SENSEX: [] },
   spotTrendingOI: { NIFTY: [], SENSEX: [] }, // Using empty arrays to ensure real data populates it
   futureTrendingOI: { NIFTY: [], SENSEX: [] },
   selectedExpiry: '2026-08-20',

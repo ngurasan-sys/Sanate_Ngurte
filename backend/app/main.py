@@ -29,6 +29,11 @@ from backend.app.api.endpoints.backtest import router as backtest_router
 from backend.app.api.endpoints.footprint import router as footprint_router
 from backend.app.api.endpoints.ofao import router as ofao_router
 from backend.app.api.endpoints.executions import router as executions_router
+from backend.app.api.endpoints.market import router as market_router, set_gap_opening_engine as market_set_gap_opening
+from backend.app.api.endpoints.strategies import router as strategies_router
+from backend.app.api.endpoints.risk_summary import router as risk_summary_router, set_risk_engine as risk_set_risk_engine
+from backend.app.api.endpoints.decisions_api import router as decisions_router, set_decision_engine as decisions_set_decision
+from backend.app.api.endpoints.option_chain import router as option_chain_router, set_option_analytics_engine as option_set_analytics
 
 from backend.app.engines.opportunity import opportunity_engine
 from backend.app.engines.decision import decision_engine
@@ -147,6 +152,12 @@ async def lifespan(app: FastAPI):
     level_engine = LevelEngine()
     set_level_engine(level_engine)
     level_engine.start()
+
+    # Inject engine instances for API endpoints
+    market_set_gap_opening(gap_opening_engine)
+    risk_set_risk_engine(risk_engine)
+    decisions_set_decision(decision_engine)
+    option_set_analytics(option_analytics_engine)
 
     # Pick the 3-minute aggregator explicitly rather than relying on list
     # ordering in TickProcessor.__init__.
@@ -413,7 +424,25 @@ app.include_router(
     executions_router
 )
 
+app.include_router(
+    market_router
+)
 
+app.include_router(
+    strategies_router
+)
+
+app.include_router(
+    risk_summary_router
+)
+
+app.include_router(
+    decisions_router
+)
+
+app.include_router(
+    option_chain_router
+)
 
 
 # =============================================================

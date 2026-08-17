@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShieldAlert } from 'lucide-react';
-import { mockDecisions } from '../mock/data';
+import { useDecisionStore } from '../stores/decisionStore';
 import StatusBadge from './StatusBadge';
 
 interface DetailDrawerProps {
@@ -9,9 +9,10 @@ interface DetailDrawerProps {
 }
 
 export const DetailDrawer: React.FC<DetailDrawerProps> = ({ decisionId, onClose }) => {
+  const decisions = useDecisionStore((s) => s.decisions);
   if (!decisionId) return null;
 
-  const decision = mockDecisions.find((d) => d.id === decisionId);
+  const decision = decisions.find((d) => d.id === decisionId);
   if (!decision) return null;
 
   return (

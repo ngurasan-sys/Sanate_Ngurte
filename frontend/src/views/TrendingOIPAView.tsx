@@ -108,7 +108,7 @@ export const TrendingOIPAView: React.FC = () => {
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
           <div className="flex justify-between items-center border-b border-zinc-850 pb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">Market</span>
-            <StatusBadge status="CONNECTED" />
+            <StatusBadge status={nifty ? 'ACTIVE' : 'NO DATA'} />
           </div>
           <div className="flex justify-between items-center text-sm font-mono">
             <span className="text-zinc-400">Underlying</span>

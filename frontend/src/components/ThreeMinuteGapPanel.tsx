@@ -5,14 +5,11 @@ import { useThreeMinuteGapStore } from '../stores/threeMinuteGapStore';
 const ThreeMinuteGapPanel: React.FC = () => {
   const store = useThreeMinuteGapStore();
 
-  // Simulated WebSocket connection for this specific component as an example
+  // TODO: Wire to real WebSocket at ws://localhost:8000/ws/three_minute_gap
+  // For now, shows NO DATA until backend provides live data
   useEffect(() => {
-    store.updateState({
-        isConnected: true,
-        strategyStatus: 'WAITING_FOR_SESSION',
-        executionMode: 'DATA_ONLY'
-    });
-
+    // Removed fake isConnected: true — now reflects real backend state
+    // Once WebSocket is wired, real data will populate here
   }, []);
 
   return (
