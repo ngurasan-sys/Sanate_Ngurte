@@ -14,3 +14,13 @@ async def test_upstox_registered_at_import_time():
     assert reg.provider is not None
     assert reg.execution_adapter is not None
     assert reg.auth_module is not None
+
+
+@pytest.mark.asyncio
+async def test_dhan_registered_at_import_time():
+    import backend.app.main  # noqa: F401
+    assert "dhan" in ab_module.active_broker._registrations
+    reg = ab_module.active_broker._registrations["dhan"]
+    assert reg.provider is not None
+    assert reg.execution_adapter is not None
+    assert reg.auth_module is not None
