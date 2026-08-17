@@ -6,17 +6,22 @@ silently doing nothing.
 """
 
 import logging
+import struct
 from datetime import date
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 
 from backend.app.core.dhan_instrument_master import dhan_instrument_master
+from backend.app.core.event_bus import event_bus
 from backend.app.market_data.market_quote import Quote
+from backend.app.market_data.models import Tick
 
 logger = logging.getLogger(__name__)
 
 DHAN_BASE_URL = "https://api.dhan.co/v2"
+DHAN_FEED_WS_URL = "wss://api-feed.dhan.co"
+LTP_FEED_RESPONSE_CODE = 2
 
 
 class DhanProviderError(Exception):
@@ -28,14 +33,56 @@ def _headers(access_token: str) -> Dict[str, str]:
 
 
 class DhanProvider:
+    def __init__(self):
+        self._ws = None
+        self._running = False
+
     def instrument_key_for_index(self, underlying: str) -> str:
         return dhan_instrument_master.security_id_for_index(underlying)
 
+    def _parse_packet(self, raw: bytes) -> Optional[Tick]:
+        if len(raw) < 16:
+            return None
+        code, _msg_len, _segment, security_id = struct.unpack(">BHBI", raw[:8])
+        if code != LTP_FEED_RESPONSE_CODE:
+            return None
+        ltp, _trade_time = struct.unpack(">fI", raw[8:16])
+        from datetime import datetime
+        return Tick(instrument=str(security_id), price=float(ltp), volume=0.0, timestamp=datetime.now(), is_trade=True)
+
     async def connect_feed(self) -> None:
-        raise NotImplementedError("Dhan live feed is implemented in a follow-up task.")
+        import websockets  # only imported here so the module stays importable without the dependency installed, matching upstox_v3.py's UPSTOX_AVAILABLE pattern
+
+        from backend.app.core import dhan_auth
+        token = dhan_auth.load_token()
+        client_id = dhan_auth.load_client_id()
+        if not token or not client_id:
+            return
+
+        url = f"{DHAN_FEED_WS_URL}?version=2&token={token}&clientId={client_id}&authType=2"
+        self._ws = await websockets.connect(url)
+        self._running = True
+        import asyncio
+        asyncio.create_task(self._read_loop())
+
+    async def _read_loop(self) -> None:
+        try:
+            async for raw in self._ws:
+                if not self._running:
+                    break
+                if isinstance(raw, str):
+                    continue
+                tick = self._parse_packet(raw)
+                if tick is not None:
+                    await event_bus.publish("MARKET_TICK", tick)
+        except Exception:
+            pass
 
     async def disconnect_feed(self) -> None:
-        raise NotImplementedError("Dhan live feed is implemented in a follow-up task.")
+        self._running = False
+        if self._ws is not None:
+            await self._ws.close()
+            self._ws = None
 
     async def fetch_option_chain(
         self, index_key: str, access_token: str, expiry_date: str = "current_week",
