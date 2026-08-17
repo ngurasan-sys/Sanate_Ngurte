@@ -16,11 +16,11 @@ async def update_engine_status(update: StatusUpdate):
     await event_bus.publish("ALGO_STATUS", {"status": update.status})
     return {"status": update.status}
 
-class ModeUpdate(BaseModel):
-    mode: str
 
-@router.post("/execution/mode")
-async def update_execution_mode(update: ModeUpdate):
-    logger.info(f"Execution mode updated to: {update.mode}")
-    # Update logic here
-    return {"mode": update.mode}
+# NOTE: there used to be a POST /execution/mode endpoint here that only
+# logged the requested mode and echoed it back — it never touched
+# execution_runtime_state, EXECUTION_MODE, or anything RiskEngine/
+# OrderGateway actually read, so toggling it in the UI changed nothing
+# about what happened to an order. Removed in favor of the real arm
+# switch at /api/v1/execution/arm and /disarm (execution_control.py),
+# which the frontend's Algo Dashboard now calls directly.

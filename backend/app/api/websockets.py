@@ -35,7 +35,15 @@ class ConnectionManager:
             "manual_trading": {},
             "cas_dislocation": {},
             "cas_dislocation_positions": {},
-            "ofao": {}
+            "ofao": {},
+            # frontend/src/views/BtstDashboardView.tsx connects here but the
+            # channel was missing entirely, so the socket was rejected
+            # immediately and the view infinite-loop-reconnected every 3s.
+            # No BTSTCASEngine publisher is wired up yet either (the view
+            # isn't reachable from the sidebar nav) — registering the
+            # channel at least stops the reject loop; it will sit open
+            # with no data until a real publisher is wired in.
+            "btst_cas": {},
         }
 
         # Subscribe to events from the event bus and forward to websocket

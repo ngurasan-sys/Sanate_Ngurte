@@ -29,6 +29,14 @@ class FootprintProcessor:
         self.running = False
         self._broadcast_task: Optional[asyncio.Task] = None
         self._dirty_instruments: set[str] = set()
+        # Only mock_feed.py's "footprint_mock_tick" event is subscribed to
+        # below — no real Level-2 futures feed exists yet (see
+        # mock_feed.py's module docstring). This is the single source of
+        # truth OFAOEngine's LIVE-execution gate (risk.py) reads to decide
+        # whether OFAO is allowed to place a real order. Flip this to
+        # "REAL" only once a genuine Level-2 tick source is wired in and
+        # publishing here instead of/alongside the mock feed.
+        self.data_source: str = "MOCK"
 
     def start(self):
         if self.running:

@@ -34,6 +34,7 @@ from backend.app.api.endpoints.strategies import router as strategies_router
 from backend.app.api.endpoints.risk_summary import router as risk_summary_router, set_risk_engine as risk_set_risk_engine
 from backend.app.api.endpoints.decisions_api import router as decisions_router, set_decision_engine as decisions_set_decision
 from backend.app.api.endpoints.option_chain import router as option_chain_router, set_option_analytics_engine as option_set_analytics
+from backend.app.api.endpoints.strategies import register_strategy
 
 from backend.app.engines.opportunity import opportunity_engine
 from backend.app.engines.decision import decision_engine
@@ -158,6 +159,19 @@ async def lifespan(app: FastAPI):
     risk_set_risk_engine(risk_engine)
     decisions_set_decision(decision_engine)
     option_set_analytics(option_analytics_engine)
+
+    # Populate the /api/v1/strategies registry — register_strategy() was
+    # previously never called anywhere, so the endpoint always returned an
+    # empty list despite being wired correctly at the transport level.
+    register_strategy("trending_oi_price_action", "Trending OI + Price Action", "3-minute timeframe momentum option buying with OI/price-action confluence.", engine=trending_oi_pa_engine)
+    register_strategy("intraday_trend_scalper", "Intraday Trend Scalper", "Intraday trend-following scalper.", engine=intraday_trend_scalper)
+    register_strategy("oh_ol", "Open=High / Open=Low", "Opening-range breakout strategy.", engine=oh_ol_strategy)
+    register_strategy("straddle", "Straddle Monitor", "ATM straddle monitoring and signal generation.", engine=straddle_engine)
+    register_strategy("pullback_chop_filter", "Pullback Chop Filter", "Filters chop/consolidation zones from pullback entries.", engine=pullback_chop_filter_engine)
+    register_strategy("gap_opening", "Gap Opening Strategies", "Gap-open discovery and OI-regime driven entries.", engine=gap_opening_engine)
+    register_strategy("expiry_reversal", "Expiry Day Reversal", "Expiry-day mean-reversion strategy.", engine=expiry_reversal_engine)
+    register_strategy("cas_dislocation", "CAS Dislocation", "Cash-and-carry / synthetic dislocation strategy.", engine=cas_dislocation_engine)
+    register_strategy("ofao", "Order Flow Absorption (OFAO)", "Footprint-based absorption/dominance option strategy.", engine=ofao_engine)
 
     # Pick the 3-minute aggregator explicitly rather than relying on list
     # ordering in TickProcessor.__init__.

@@ -1,16 +1,37 @@
 import React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSystemStore } from '../stores/systemStore';
+import { useLiveBrokerStatus } from '../hooks/useLiveBrokerStatus';
 import StatusBadge from './StatusBadge';
 import { Link2, ShieldCheck, Lock } from 'lucide-react';
 
 export const BrokeragePanel: React.FC = () => {
   const { brokerageStatus, connectBroker, disconnectBroker } = useSystemStore();
+  const [disconnecting, setDisconnecting] = useState(false);
 
+  // Keeps isConnected/authStatus synced to the real backend
+  // (active_broker via /api/v1/brokers/upstox/status) instead of relying
+  // solely on locally-mutated state.
+  useLiveBrokerStatus('upstox');
 
-  const handleToggle = () => {
+  const handleToggle = async () => {
     if (brokerageStatus.isConnected) {
-      disconnectBroker();
+      setDisconnecting(true);
+      try {
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const res = await fetch(`${baseUrl}/api/v1/brokers/upstox/credentials`, { method: 'DELETE' });
+        if (!res.ok) {
+          const detail = await res.text();
+          window.alert(`Failed to disconnect broker: ${detail}`);
+          return;
+        }
+        disconnectBroker();
+      } catch (err) {
+        console.error('Failed to disconnect broker', err);
+        window.alert('Failed to disconnect broker — see console for details.');
+      } finally {
+        setDisconnecting(false);
+      }
     } else {
       // Open Upstox OAuth login in a new tab/window
       const width = 600;
@@ -62,13 +83,14 @@ export const BrokeragePanel: React.FC = () => {
 
         <button
           onClick={handleToggle}
-          className={`px-4 py-2 text-xs font-semibold tracking-wider rounded-lg border transition-all ${
+          disabled={disconnecting}
+          className={`px-4 py-2 text-xs font-semibold tracking-wider rounded-lg border transition-all disabled:opacity-50 ${
             brokerageStatus.isConnected
               ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/20'
               : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
           }`}
         >
-          {brokerageStatus.isConnected ? 'DISCONNECT' : 'CONNECT'}
+          {disconnecting ? 'DISCONNECTING…' : brokerageStatus.isConnected ? 'DISCONNECT' : 'CONNECT'}
         </button>
       </div>
 

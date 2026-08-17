@@ -8,6 +8,7 @@ import { useLiveMarketIndices } from './hooks/useLiveMarketIndices';
 import { useLiveDecisions } from './hooks/useLiveDecisions';
 import { useLiveRisk } from './hooks/useLiveRisk';
 import { useLiveStrategies } from './hooks/useLiveStrategies';
+import { useAlgoWebSocket } from './hooks/useAlgoWebSocket';
 
 // Reusable / specific view panels
 import MetricCard from './components/MetricCard';
@@ -63,6 +64,11 @@ export const App: React.FC = () => {
 
   // Fetch live strategies
   useLiveStrategies();
+
+  // Live algo signal/status WebSocket — was previously defined but never
+  // invoked, leaving ALGO_DASHBOARD/TRENDING_OI_PA/INTRADAY_TREND_SCALPER's
+  // algoStore.signals permanently empty.
+  useAlgoWebSocket();
 
   const { activePage } = useUiStore();
   const { indices } = useMarketStore();

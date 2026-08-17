@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from backend.app.core.event_bus import event_bus
 from backend.app.engines.algo_config import algo_config_state
+from backend.app.execution.order_gateway import ExecutionMode, resolve_mode
 from backend.app.execution.risk_limits import (
     RiskLimits,
     RiskState,
@@ -14,6 +15,7 @@ from backend.app.execution.risk_limits import (
     evaluate_algo_extra,
     evaluate_all,
 )
+from backend.app.order_flow.footprint_processor import footprint_processor
 from backend.app.strategies.cas_dislocation.config_state import cas_config_state
 from backend.app.strategies.order_flow_absorption.engine import ofao_engine
 
@@ -126,6 +128,19 @@ class RiskEngine:
             if ofao_reason:
                 approved = False
                 reasons = reasons + [ofao_reason]
+            # Hard data-provenance gate: OFAOEngine itself never knows or
+            # branches on real-vs-mock ticks (spec §35 forbids that), so
+            # this is the ONE place in the whole pipeline where a mock
+            # footprint feed is prevented from ever reaching a real order.
+            # DRY_RUN/SANDBOX stay unaffected — this only blocks the LIVE
+            # path, and only for OFAO specifically.
+            elif resolve_mode() is ExecutionMode.LIVE and footprint_processor.data_source != "REAL":
+                approved = False
+                reasons = reasons + [
+                    "OFAO LIVE = BLOCKED: underlying footprint data source is "
+                    f"{footprint_processor.data_source} (mock feed), not REAL. "
+                    "No real Level-2 futures feed is wired in yet."
+                ]
 
         reason_text = "Passed all risk checks." if approved else " ".join(reasons)
 

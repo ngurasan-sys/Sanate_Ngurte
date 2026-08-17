@@ -3,10 +3,13 @@ import React from 'react';
 import { useAlgoStore } from '../stores/algoStore';
 import type { ExecutionMode, TradingMode } from '../stores/algoStore';
 import { useSystemStore } from '../stores/systemStore';
+import { useLiveExecutionStatus } from '../hooks/useLiveExecutionStatus';
 import StatusBadge from '../components/StatusBadge';
 import ManualTradingPanel from '../components/ManualTradingPanel';
 import AlgoTradingConfigPanel from '../components/AlgoTradingConfigPanel';
 import { Play, Square, Pause, Activity, Zap, Shield, BarChart, Server, Layers, Cpu, Compass, HardDrive, User, Bot } from 'lucide-react';
+
+const ARM_CONFIRMATION_PHRASE = 'ARM LIVE TRADING';
 
 export const AlgoDashboardView: React.FC = () => {
   const {
@@ -15,6 +18,11 @@ export const AlgoDashboardView: React.FC = () => {
   } = useAlgoStore();
 
   const { brokerageStatus } = useSystemStore();
+
+  // Keeps executionMode synced to the REAL backend truth
+  // (order_gateway.resolve_mode()) — see hook for why this isn't a
+  // second execution-mode system.
+  useLiveExecutionStatus();
 
   const handleEngineControl = async (status: 'RUNNING' | 'PAUSED' | 'STOPPED') => {
     try {
@@ -30,16 +38,66 @@ export const AlgoDashboardView: React.FC = () => {
     }
   };
 
+  // MANUAL must actually stop automated order submission, not just swap
+  // which panel renders. algo_config_state.enabled is the real backend
+  // gate RiskEngine checks on every ALGO-sourced decision (risk.py,
+  // check_algo_enabled) — flipping it off here is what makes MANUAL mean
+  // "no automated entries" rather than a purely cosmetic UI toggle.
+  const handleTradingModeChange = async (mode: TradingMode) => {
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    try {
+      await fetch(`${baseUrl}/api/v1/algo-config/${mode === 'MANUAL' ? 'disable' : 'enable'}`, {
+        method: 'POST',
+      });
+    } catch (err) {
+      console.error('Failed to update algo-config enabled state', err);
+    }
+    setTradingMode(mode);
+  };
+
+  // Routes through the REAL execution arm switch
+  // (execution_control.py /arm, /disarm) instead of the old no-op
+  // /api/v1/algo/execution/mode stub, which never touched
+  // execution_runtime_state and therefore never changed what
+  // order_gateway would actually do with an order.
+  //
+  // Only LIVE vs everything-else is controllable at runtime: SANDBOX
+  // requires the EXECUTION_MODE env var, fixed at process start, so
+  // selecting "PAPER" here just disarms LIVE the same as "DATA_ONLY" —
+  // useLiveExecutionStatus will reflect SANDBOX if that's genuinely
+  // what the backend is running.
   const handleModeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const mode = e.target.value as ExecutionMode;
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      await fetch(`${baseUrl}/api/v1/algo/execution/mode`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode })
-      });
-      setExecutionMode(mode);
+      if (mode === 'LIVE') {
+        const confirmed = window.confirm(
+          `Arming LIVE trading will allow REAL orders to reach the broker.\n\nType "${ARM_CONFIRMATION_PHRASE}" in the next prompt to confirm.`
+        );
+        if (!confirmed) return;
+        const phrase = window.prompt(`Type exactly "${ARM_CONFIRMATION_PHRASE}" to arm live trading:`);
+        if (phrase !== ARM_CONFIRMATION_PHRASE) {
+          window.alert('Confirmation phrase did not match. LIVE trading was NOT armed.');
+          return;
+        }
+        const res = await fetch(`${baseUrl}/api/v1/execution/arm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: phrase }),
+        });
+        if (!res.ok) {
+          const detail = await res.text();
+          window.alert(`Failed to arm LIVE trading: ${detail}`);
+          return;
+        }
+      } else {
+        await fetch(`${baseUrl}/api/v1/execution/disarm`, { method: 'POST' });
+      }
+      // Don't optimistically set — let useLiveExecutionStatus's next poll
+      // (or an immediate manual refetch) confirm what the backend
+      // actually resolved to.
+      setExecutionMode(mode === 'LIVE' ? 'LIVE' : mode);
     } catch (err) {
       console.error('Failed to update execution mode', err);
     }
@@ -93,13 +151,13 @@ export const AlgoDashboardView: React.FC = () => {
         </div>
         <div className="flex gap-1 bg-zinc-950 border border-zinc-800 rounded p-1">
           <button
-            onClick={() => setTradingMode('AUTO' as TradingMode)}
+            onClick={() => handleTradingModeChange('AUTO' as TradingMode)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${tradingMode === 'AUTO' ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             <Bot size={13} /> Auto
           </button>
           <button
-            onClick={() => setTradingMode('MANUAL' as TradingMode)}
+            onClick={() => handleTradingModeChange('MANUAL' as TradingMode)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${tradingMode === 'MANUAL' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             <User size={13} /> Manual

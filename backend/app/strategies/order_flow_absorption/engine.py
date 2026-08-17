@@ -178,7 +178,15 @@ class OFAOEngine:
     # -----------------------------------------------------------------
 
     async def evaluate(self, instrument_key: str, underlying: str) -> None:
-        if not self.config.enabled:
+        has_active_setup = self.state_machine.has_active_setup(instrument_key)
+
+        # `enabled` gates only NEW setup detection — an already-open
+        # position must keep being monitored (stop/target checks,
+        # thesis-invalidation exits) regardless of the toggle, same as
+        # cas_dislocation/engine.py's exit-monitoring-runs-regardless
+        # rule. Turning OFAO off must never leave a live position
+        # unwatched.
+        if not self.config.enabled and not has_active_setup:
             return
 
         now = datetime.now(timezone.utc)
@@ -186,9 +194,9 @@ class OFAOEngine:
         if not candles:
             return  # no data yet — never evaluate against nothing
 
-        if self.state_machine.has_active_setup(instrument_key):
+        if has_active_setup:
             await self._advance_setup(instrument_key, underlying, candles, now)
-        else:
+        elif self.config.enabled:
             self._scan_for_new_setup(instrument_key, underlying, candles, now)
 
         await self._update_snapshot(instrument_key, underlying, candles, now)

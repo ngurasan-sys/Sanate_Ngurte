@@ -1,6 +1,10 @@
 import React from 'react';
 
-// Mock types
+// No production data source: the backend's oh_ol_strategy engine only
+// exposes a per-instrument live-stream adapter (adapt_oh_ol in
+// live_stream_adapters.py), not a list/table endpoint this multi-row
+// table could consume. Rather than force-fit a mismatched integration,
+// this shows NO DATA honestly until a real list endpoint exists.
 interface OHSignal {
   id: string;
   instrument: string;
@@ -14,29 +18,7 @@ interface OHSignal {
   status?: string;
 }
 
-const mockSignals: OHSignal[] = [
-  {
-    id: "1",
-    instrument: "NIFTY",
-    probability: 95,
-    time: "09:20",
-    dailyRange: 280,
-    atr: 300,
-    isActive: true,
-    entryPrice: 24500.5,
-    stopLoss: 24500.5,
-    status: "Trailing Stop-Loss to Break-Even"
-  },
-  {
-    id: "2",
-    instrument: "BANKNIFTY",
-    probability: 85,
-    time: "09:25",
-    dailyRange: 150,
-    atr: 500,
-    isActive: false
-  }
-];
+const signals: OHSignal[] = [];
 
 export const OpenHighTable: React.FC = () => {
   return (
@@ -47,6 +29,9 @@ export const OpenHighTable: React.FC = () => {
       </div>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+        {signals.length === 0 && (
+          <div className="text-zinc-500 font-mono text-xs py-6 text-center">NO DATA</div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-xs font-mono text-left whitespace-nowrap">
             <thead className="text-zinc-500 border-b border-zinc-800">
@@ -59,7 +44,7 @@ export const OpenHighTable: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-850 text-zinc-300">
-              {mockSignals.map((sig) => {
+              {signals.map((sig) => {
                 const atrExhaustionNear = sig.dailyRange >= (sig.atr * 0.95);
 
                 return (
