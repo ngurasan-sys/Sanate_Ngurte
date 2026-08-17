@@ -11,3 +11,11 @@ export interface LivePosition {
   closedAt: string | null;
   exitReason: string | null;
 }
+
+export interface LiveOrder {
+  id: string;
+  timestamp: string;
+  instrument: string;
+  action: string;
+  status: string;
+}
