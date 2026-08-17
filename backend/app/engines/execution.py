@@ -57,6 +57,11 @@ class ExecutionEngine:
                 instrument, instrument_token, decision_id, "REJECTED", resolve_mode(),
                 quantity=quantity, price=price, source=source, detail=detail,
             )
+            await event_bus.publish("persist_execution", {
+                "instrument": instrument,
+                "action": f"{req_data.get('transaction_type', 'BUY')} {instrument}",
+                "status": "REJECTED",
+            })
             return
 
         request = OrderRequest(
@@ -83,6 +88,12 @@ class ExecutionEngine:
             order_id=result.order_id,
             detail=result.detail,
         )
+
+        await event_bus.publish("persist_execution", {
+            "instrument": instrument,
+            "action": f"{req_data.get('transaction_type', 'BUY')} {instrument}",
+            "status": result.status,
+        })
 
     async def _publish_update(
         self, instrument, instrument_token, decision_id, status: str, mode: ExecutionMode,
