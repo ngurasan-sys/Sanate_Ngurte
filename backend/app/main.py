@@ -53,6 +53,9 @@ from backend.app.engines.market_breadth_engine import market_breadth_engine
 from backend.app.market_data.upstox_provider import upstox_provider
 from backend.app.execution.upstox_adapter import upstox_execution_adapter
 from backend.app.core import upstox_auth
+from backend.app.market_data.dhan_provider import dhan_provider
+from backend.app.execution.dhan_adapter import dhan_execution_adapter
+from backend.app.core import dhan_auth
 from backend.app.core.active_broker import active_broker
 
 # Registering here (module import time) means active_broker knows about
@@ -60,6 +63,10 @@ from backend.app.core.active_broker import active_broker
 # still gates whether it can actually be activated.
 active_broker.register_broker(
     "upstox", provider=upstox_provider, execution_adapter=upstox_execution_adapter, auth_module=upstox_auth,
+)
+
+active_broker.register_broker(
+    "dhan", provider=dhan_provider, execution_adapter=dhan_execution_adapter, auth_module=dhan_auth,
 )
 
 # =============================================================
