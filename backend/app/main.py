@@ -28,6 +28,7 @@ from backend.app.api.endpoints.cas_dislocation import router as cas_dislocation_
 from backend.app.api.endpoints.backtest import router as backtest_router
 from backend.app.api.endpoints.footprint import router as footprint_router
 from backend.app.api.endpoints.ofao import router as ofao_router
+from backend.app.api.endpoints.executions import router as executions_router
 
 from backend.app.engines.opportunity import opportunity_engine
 from backend.app.engines.decision import decision_engine
@@ -371,6 +372,10 @@ app.include_router(
 
 app.include_router(
     backtest_router
+)
+
+app.include_router(
+    executions_router
 )
 
 
