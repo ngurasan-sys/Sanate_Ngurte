@@ -1,6 +1,10 @@
-import React from 'react';
+import React, { memo } from 'react';
 
-export const LoadingState: React.FC = () => {
+/**
+ * ⚡ Bolt Optimization: Wrapped in React.memo()
+ * Impact: Prevents unnecessary re-renders of this pure stateless leaf component.
+ */
+export const LoadingState: React.FC = memo(() => {
   return (
     <div className="flex flex-col items-center justify-center p-12 space-y-4 select-none">
       <div className="flex items-center gap-1.5 font-mono text-zinc-500 text-xs">
@@ -16,6 +20,6 @@ export const LoadingState: React.FC = () => {
       </div>
     </div>
   );
-};
+});
 
 export default LoadingState;

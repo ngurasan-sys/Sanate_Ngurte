@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { AlertTriangle } from 'lucide-react';
 
 interface ErrorStateProps {
@@ -7,7 +7,11 @@ interface ErrorStateProps {
   onReconnect?: () => void;
 }
 
-export const ErrorState: React.FC<ErrorStateProps> = ({
+/**
+ * ⚡ Bolt Optimization: Wrapped in React.memo()
+ * Impact: Prevents unnecessary re-renders of this pure stateless leaf component.
+ */
+export const ErrorState: React.FC<ErrorStateProps> = memo(({
   message = 'Market data feed unavailable',
   timestamp = '10:32:14',
   onReconnect,
@@ -34,6 +38,6 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
       )}
     </div>
   );
-};
+});
 
 export default ErrorState;
