@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { HelpCircle } from 'lucide-react';
 
 interface EmptyStateProps {
@@ -6,7 +6,11 @@ interface EmptyStateProps {
   description?: string;
 }
 
-export const EmptyState: React.FC<EmptyStateProps> = ({
+/**
+ * ⚡ Bolt Optimization: Wrapped in React.memo()
+ * Impact: Prevents unnecessary re-renders of this pure stateless leaf component.
+ */
+export const EmptyState: React.FC<EmptyStateProps> = memo(({
   title = 'No active records',
   description = 'Your system or active strategies have not generated matching records today.',
 }) => {
@@ -17,6 +21,6 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       <p className="text-xs text-zinc-500 font-sans mt-1 text-center max-w-sm">{description}</p>
     </div>
   );
-};
+});
 
 export default EmptyState;
