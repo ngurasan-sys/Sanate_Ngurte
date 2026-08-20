@@ -126,17 +126,19 @@ def test_engine_greeks_update():
 
 def test_depth_imbalance():
     from backend.app.order_flow.models import DepthLevel
-    from backend.app.order_flow.analysis import calculate_depth_imbalance
+    from backend.app.order_flow.analysis import calculate_all_depth_imbalances
 
     # Using dicts now due to hot path optimizations
     bids = [{"price": 100, "quantity": 100, "orders": 1}, {"price": 99, "quantity": 200, "orders": 2}]
     asks = [{"price": 101, "quantity": 100, "orders": 1}, {"price": 102, "quantity": 50, "orders": 1}]
 
+    imbalances = calculate_all_depth_imbalances(bids, asks, (1, 2))
+
     # Imbalance 1: bid=100, ask=100, total=200 -> 0.0
-    assert calculate_depth_imbalance(bids, asks, 1) == 0.0
+    assert imbalances.get(1) == 0.0
 
     # Imbalance 2: bid=300, ask=150, total=450 -> 150/450 = 0.333...
-    assert abs(calculate_depth_imbalance(bids, asks, 2) - 0.333) < 0.01
+    assert abs(imbalances.get(2) - 0.333) < 0.01
 
 def test_spread_and_mid():
     from backend.app.order_flow.analysis import calculate_spread_and_mid

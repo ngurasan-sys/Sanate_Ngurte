@@ -5,7 +5,7 @@ from .analysis import (
     classify_trade_direction,
     calculate_classification_confidence,
     calculate_spread_and_mid,
-    calculate_depth_imbalance
+    calculate_all_depth_imbalances
 )
 
 
@@ -138,19 +138,19 @@ class OrderFlowEngine:
             # Always update spread/mid using the (possibly) updated bests
             state.spread, state.mid_price = calculate_spread_and_mid(raw.get("best_bid"), raw.get("best_ask"))
 
-            # Only calculate imbalances for N where we have enough levels
-            # This avoids unnecessary work when depth is shallow
-            bids_len = len(state.depth.bids)
-            asks_len = len(state.depth.asks)
-            min_levels = min(bids_len, asks_len)
+            # Define requested imbalance depths
+            imbalance_depths = (1, 3, 5, 10, 20, 30)
 
-            # Define requested imbalance depths in ascending order
-            imbalance_depths = [1, 3, 5, 10, 20, 30]
+            # Calculate all requested imbalances in a single O(N) pass
+            imbalances = calculate_all_depth_imbalances(
+                state.depth.bids, state.depth.asks, imbalance_depths
+            )
+
+            # Update state with calculated imbalances, setting missing ones to None
             for n in imbalance_depths:
                 attr = f"depth_imbalance_{n}"
-                if min_levels >= n:
-                    # compute only when at least n levels available
-                    setattr(state, attr, calculate_depth_imbalance(state.depth.bids, state.depth.asks, n))
+                if n in imbalances:
+                    setattr(state, attr, imbalances[n])
                 elif getattr(state, attr, None) is not None:
                     setattr(state, attr, None)
 
