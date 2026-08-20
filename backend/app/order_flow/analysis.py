@@ -45,26 +45,39 @@ def calculate_spread_and_mid(best_bid, best_ask):
     mid_price = (best_bid + best_ask) / 2
     return spread, mid_price
 
-def calculate_depth_imbalance(bids, asks, levels):
+def calculate_all_depth_imbalances(bids, asks, target_levels=(1, 3, 5, 10, 20, 30)):
+    bids_len = len(bids)
+    asks_len = len(asks)
+    min_levels = min(bids_len, asks_len)
+
+    if min_levels == 0:
+        return {}
+
+    results = {}
     bid_sum = 0
     ask_sum = 0
 
-    if bids:
-        for i in range(min(levels, len(bids))):
-            b = bids[i]
-            qty = b.quantity if hasattr(b, "quantity") else b["quantity"]
-            bid_sum += qty
+    max_target = min(max(target_levels), min_levels)
 
-    if asks:
-        for i in range(min(levels, len(asks))):
-            a = asks[i]
-            qty = a.quantity if hasattr(a, "quantity") else a["quantity"]
-            ask_sum += qty
+    for i in range(max_target):
+        b = bids[i]
+        try:
+            bid_sum += b.quantity
+        except AttributeError:
+            bid_sum += b["quantity"]
 
-    total = bid_sum + ask_sum
-    if total == 0:
-        return 0.0
-    return (bid_sum - ask_sum) / total
+        a = asks[i]
+        try:
+            ask_sum += a.quantity
+        except AttributeError:
+            ask_sum += a["quantity"]
+
+        n = i + 1
+        if n in target_levels:
+            total = bid_sum + ask_sum
+            results[n] = 0.0 if total == 0 else (bid_sum - ask_sum) / total
+
+    return results
 
 def check_diagonal_imbalance(footprint, ratio=3.0):
     sorted_prices = sorted(footprint.keys())
