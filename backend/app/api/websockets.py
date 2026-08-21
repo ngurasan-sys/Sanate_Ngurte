@@ -59,11 +59,11 @@ class ConnectionManager:
         event_bus.subscribe("option_analytics", lambda e: self.broadcast("option_analytics", e))
 
     def _publish_model_or_dict(self, channel: str, payload):
+        # PERFORMANCE OPTIMIZATION: Use try...except instead of hasattr to optimize speed when serializing Pydantic models vs dicts in websocket broadcasts
         try:
-            if hasattr(payload, "model_dump"):
-                msg = payload.model_dump()
-            else:
-                msg = payload
+            msg = payload.model_dump()
+        except AttributeError:
+            msg = payload
         except Exception:
             msg = payload
 

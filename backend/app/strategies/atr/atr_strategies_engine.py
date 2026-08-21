@@ -174,9 +174,12 @@ class ATRStrategiesEngine:
             if state["day_low"] == 0.0 or tick.price < state["day_low"]: state["day_low"] = tick.price
 
             state["futures_price"] = tick.price
-            if hasattr(tick, 'oi'):
+            # PERFORMANCE OPTIMIZATION: Use try...except instead of hasattr to avoid overhead in performance-critical hot paths
+            try:
                 state["futures_oi_change"] = tick.oi - state["futures_oi"]
                 state["futures_oi"] = tick.oi
+            except AttributeError:
+                pass
 
             if tick.volume:
                 state["futures_volume"] = tick.volume
@@ -422,8 +425,12 @@ class ATRStrategiesEngine:
     async def _emit_signal(self, underlying: str, action: str, lots: int, reason: str, state: Dict[str, Any], candle: Candle):
         # Allow emitting signals even if candle is None or missing close property
         close_price = 0.0
-        if candle and hasattr(candle, "close"):
-            close_price = candle.close
+        # PERFORMANCE OPTIMIZATION: Use try...except instead of hasattr to avoid overhead in performance-critical hot paths
+        if candle:
+            try:
+                close_price = candle.close
+            except AttributeError:
+                pass
 
         signal = {
             "signal_id": f"SIG_{self.strategy_id}_{datetime.now().timestamp()}",
