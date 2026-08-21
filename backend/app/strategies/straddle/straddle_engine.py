@@ -124,8 +124,12 @@ class StraddleEngine:
                     self.ce_state[strike]["ltp"] = tick.price
                     if tick.volume:
                         self.ce_state[strike]["volume"] = tick.volume
-                    if hasattr(tick, "oi") and tick.oi:
-                        self.ce_state[strike]["oi"] = tick.oi
+                    # PERFORMANCE OPTIMIZATION: Use try...except instead of hasattr to avoid overhead in performance-critical hot paths
+                    try:
+                        if tick.oi:
+                            self.ce_state[strike]["oi"] = tick.oi
+                    except AttributeError:
+                        pass
             except Exception:
                 pass
         elif "PE" in tick.instrument or "P" in tick.instrument.split('|')[-1]:
@@ -138,8 +142,12 @@ class StraddleEngine:
                     self.pe_state[strike]["ltp"] = tick.price
                     if tick.volume:
                         self.pe_state[strike]["volume"] = tick.volume
-                    if hasattr(tick, "oi") and tick.oi:
-                        self.pe_state[strike]["oi"] = tick.oi
+                    # PERFORMANCE OPTIMIZATION: Use try...except instead of hasattr to avoid overhead in performance-critical hot paths
+                    try:
+                        if tick.oi:
+                            self.pe_state[strike]["oi"] = tick.oi
+                    except AttributeError:
+                        pass
             except Exception:
                 pass
 
